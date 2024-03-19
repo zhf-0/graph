@@ -10,11 +10,7 @@ import torch.nn as nn
 import torch_geometric.data as pygdat
 
 from graphdata import GraphData, TransUnsqu
-from gin import gin
-from templateGCN import gcn
 from graphnet import GraphWrap
-from gat import GatWrap
-from gcn23 import GCN23Warp
 
 
 def plot_loss(loss_list,num_batch,num_epoch,epoch_step,name):

@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import scipy.io as sio
 import scipy.sparse as sparse
 from scipy.sparse import coo_matrix
-import pandas as pd 
 
 import torch
 import torch_geometric.data as pygdat
