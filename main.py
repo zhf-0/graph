@@ -69,16 +69,17 @@ def main():
     setup_seed(random_seed)
 
     # mat_idx = list(np.load('./idx.npy'))
-    # random.shuffle(mat_idx)
-    # ratio = 0.8
-    # mark = int(len(mat_idx)*ratio)
-    # train_idx = mat_idx[0:mark]
-    # test_idx = mat_idx[mark:]
+    # train_idx = list(np.load('./trainidx.npy'))
+    # test_idx = list(np.load('./testidx.npy'))
 
-    train_idx = list(np.load('./trainidx.npy'))
-    test_idx = list(np.load('./testidx.npy'))
+    mat_idx = list(range(100))
+    random.shuffle(mat_idx)
+    ratio = 0.8
+    mark = int(len(mat_idx)*ratio)
+    train_idx = mat_idx[0:mark]
+    test_idx = mat_idx[mark:]
     
-    dataset = GraphData(process=1)
+    dataset = GraphData(mat_idx)
 
     train_set = torch.utils.data.Subset(dataset,train_idx)
     test_set = torch.utils.data.Subset(dataset,test_idx)

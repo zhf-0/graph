@@ -59,8 +59,8 @@ class NodeModel(torch.nn.Module):
         # u: [B, F_u]
         # batch: [N] with max entry B - 1.
 
+        # the equation is: x_i = x_i + Aggr(x_j, e_ij) 
         # official
-        # x_i = x_i + Aggr(x_j, e_ij) 
         # row, col = edge_index
         # out = torch.cat([x[row], edge_attr], dim=1)
         # out = self.node_mlp_1(out)
@@ -68,7 +68,7 @@ class NodeModel(torch.nn.Module):
         # out = torch.cat([x, out, u[batch]], dim=1)
         # out = self.node_mlp_2(out)
 
-        # x_i = x_i + Aggr(e_ij)
+        # my personal new equation is: x_i = x_i + Aggr(e_ij) 
         row, col = edge_index
         out = scatter_mean(edge_attr, row, dim=0, dim_size=x.size(0))
         out = torch.cat([x, out, u[batch]], dim=1)
@@ -87,7 +87,12 @@ class GlobalModel(torch.nn.Module):
         # u: [B, F_u]
         # batch: [N] with max entry B - 1.
         
-        # u + node_attr + edge_attr
+        # the equation is: u + node_attr 
+        # official
+        # out = torch.cat([u, scatter_mean(x, batch, dim=0)], dim=1)
+        # out = self.global_mlp(out)
+
+        # my personal new equation is: u + node_attr + edge_attr
         row, col = edge_index
         e_batch = batch[row]
         out = torch.cat(
@@ -100,23 +105,19 @@ class GlobalModel(torch.nn.Module):
         )
         out = self.global_mlp(out)
 
-        # official
-        # u + node_attr 
-        # out = torch.cat([u, scatter_mean(x, batch, dim=0)], dim=1)
-        # out = self.global_mlp(out)
         return out
 
 
 class GraphNet(torch.nn.Module):
-    def __init__(self,class_num):
+    def __init__(self,num_layer):
         super().__init__()
-        e_in = 1
-        n_in = 1
-        g_in = 1
+        e_in = 3
+        n_in = 2
+        g_in = 0
 
         e_out = 16
         n_out = 16
-        g_out = 16
+        g_out = 0
 
         n_hidden = 1
         hidden_size = 16
