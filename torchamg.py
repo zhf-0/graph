@@ -24,6 +24,7 @@ class TwoGrid:
 
         return out
 
+
 #雅可比迭代
 def jacobi(A, x, b, diag, iterations=1, omega=1.0):
     temp = x
@@ -125,4 +126,3 @@ def gauss_seidel_solver(indptr, indices, data, x, b, row_start, row_stop, row_st
 # x = gauss_seidel(A, x0, b, iterations=10)
 # print('gauss-seidel计算结果:')
 # print(f'{torch.linalg.norm(b-sparse.mm(A, x0)):2.4}')
-
