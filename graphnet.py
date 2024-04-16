@@ -4,8 +4,8 @@ from torch_scatter import scatter_mean, scatter_add
 from torch import nn
 from torch_geometric.nn import MetaLayer
 import torch.nn.functional as F
+import torchamg
 
-from torchmetrics.classification import MultilabelStatScores as Stat
 
 def CreateMLP(
     in_size,
@@ -41,38 +41,37 @@ class EdgeModel(torch.nn.Module):
     def forward(self, src, dest, edge_attr, u, batch):
         # src, dest: [E, F_x], where E is the number of edges.
         # edge_attr: [E, F_e]
-        # u: [B, F_u], where B is the number of graphs.
-        # batch: [E] with max entry B - 1.
-        out = torch.cat([src, dest, edge_attr, u[batch]], 1)
+
+        out = torch.cat([src, dest, edge_attr], 1)
         out = self.edge_mlp(out)
         return out
 
 class NodeModel(torch.nn.Module):
-    def __init__(self,in_size, out_size, n_hidden, hidden_size, activation, activate_last, layer_norm):
+    def __init__(self, x_size, in_size, out_size, n_hidden, hidden_size, activation, activate_last, layer_norm):
         super().__init__()
-        self.node_mlp = CreateMLP(in_size, out_size, n_hidden, hidden_size, activation, activate_last, layer_norm)
+        # self.node_mlp = CreateMLP(in_size, out_size, n_hidden, hidden_size, activation, activate_last, layer_norm)
+        self.node_mlp_1 = CreateMLP(in_size, out_size, n_hidden, hidden_size, activation, activate_last, layer_norm)
+        self.node_mlp_2 = CreateMLP(x_size+out_size, out_size, n_hidden, hidden_size, activation, activate_last, layer_norm)
 
     def forward(self, x, edge_index, edge_attr, u, batch):
         # x: [N, F_x], where N is the number of nodes.
         # edge_index: [2, E] with max entry N - 1.
         # edge_attr: [E, F_e]
-        # u: [B, F_u]
-        # batch: [N] with max entry B - 1.
 
         # the equation is: x_i = x_i + Aggr(x_j, e_ij) 
         # official
-        # row, col = edge_index
-        # out = torch.cat([x[row], edge_attr], dim=1)
-        # out = self.node_mlp_1(out)
-        # out = scatter_mean(out, col, dim=0, dim_size=x.size(0))
-        # out = torch.cat([x, out, u[batch]], dim=1)
-        # out = self.node_mlp_2(out)
+        row, col = edge_index
+        out = torch.cat([x[row], edge_attr], dim=1)
+        out = self.node_mlp_1(out)
+        out = scatter_mean(out, col, dim=0, dim_size=x.size(0))
+        out = torch.cat([x, out], dim=1)
+        out = self.node_mlp_2(out)
 
         # my personal new equation is: x_i = x_i + Aggr(e_ij) 
-        row, col = edge_index
-        out = scatter_mean(edge_attr, row, dim=0, dim_size=x.size(0))
-        out = torch.cat([x, out, u[batch]], dim=1)
-        out = self.node_mlp(out)
+        # row, col = edge_index
+        # out = scatter_mean(edge_attr, row, dim=0, dim_size=x.size(0))
+        # out = torch.cat([x, out, u[batch]], dim=1)
+        # out = self.node_mlp(out)
         return out
 
 class GlobalModel(torch.nn.Module):
@@ -89,70 +88,146 @@ class GlobalModel(torch.nn.Module):
         
         # the equation is: u + node_attr 
         # official
-        # out = torch.cat([u, scatter_mean(x, batch, dim=0)], dim=1)
-        # out = self.global_mlp(out)
+        out = torch.cat([u, scatter_mean(x, batch, dim=0)], dim=1)
+        out = self.global_mlp(out)
 
         # my personal new equation is: u + node_attr + edge_attr
-        row, col = edge_index
-        e_batch = batch[row]
-        out = torch.cat(
-            [
-                u,
-                scatter_mean(x, batch, dim=0),
-                scatter_mean(edge_attr, e_batch, dim=0),
-            ],
-            dim=1,
-        )
-        out = self.global_mlp(out)
+        # row, col = edge_index
+        # e_batch = batch[row]
+        # out = torch.cat(
+        #     [
+        #         u,
+        #         scatter_mean(x, batch, dim=0),
+        #         scatter_mean(edge_attr, e_batch, dim=0),
+        #     ],
+        #     dim=1,
+        # )
+        # out = self.global_mlp(out)
 
         return out
 
 
 class GraphNet(torch.nn.Module):
-    def __init__(self,num_layer):
+    def __init__(self,middle_layer):
         super().__init__()
         e_in = 3
         n_in = 2
         g_in = 0
+        
+        e_mid = 4
+        n_mid = 4
+        g_mid = 0
 
-        e_out = 16
-        n_out = 16
+        e_out = 1
+        n_out = 1
         g_out = 0
 
         n_hidden = 1
         hidden_size = 16
 
-        edge1 = EdgeModel(e_in+2*n_in+g_in,e_out,n_hidden,hidden_size,nn.ReLU,False,False)
-        node1 = NodeModel(n_in+e_out+g_in,n_out,n_hidden,hidden_size,nn.ReLU,False,False)
-        global1 = GlobalModel(n_out+e_out+g_in,g_out,n_hidden,hidden_size,nn.ReLU,False,False)
-        self.meta1 = MetaLayer(edge_model = edge1,node_model=node1,global_model=global1)
+        layers = []
 
-        edge2 = EdgeModel(e_out+2*n_out+g_out,e_out,n_hidden,hidden_size,nn.ReLU,False,False)
-        node2 = NodeModel(n_out+e_out+g_out,n_out,n_hidden,hidden_size,nn.ReLU,False,False)
-        global2 = GlobalModel(n_out+e_out+g_out,g_out,n_hidden,hidden_size,nn.ReLU,False,False)
-        self.meta2 = MetaLayer(edge_model = edge2,node_model=node2,global_model=global2)
+        edge1 = EdgeModel(e_in+2*n_in+g_in,e_mid,n_hidden,hidden_size,nn.ReLU,False,False)
+        node1 = NodeModel(n_in,n_in+e_mid+g_in,n_mid,n_hidden,hidden_size,nn.ReLU,False,False)
+        layers.append(MetaLayer(edge_model = edge1,node_model=node1,global_model=None))
+
+        for _ in range(middle_layer):
+            edge = EdgeModel(e_mid+2*n_mid+g_mid,e_mid,n_hidden,hidden_size,nn.ReLU,False,False)
+            node = NodeModel(n_mid,n_mid+e_mid+g_mid,n_mid,n_hidden,hidden_size,nn.ReLU,False,False)
+            layers.append(MetaLayer(edge_model=edge,node_model=node,global_model=None))
+
+        edge2 = EdgeModel(e_mid+2*n_mid+g_mid,e_out,n_hidden,hidden_size,nn.ReLU,False,False)
+        node2 = NodeModel(n_mid,n_mid+e_out+g_mid,n_out,n_hidden,hidden_size,nn.ReLU,False,False)
+        layers.append(MetaLayer(edge_model = edge2,node_model=node2,global_model=None))
+
+        self.models = Seq(*layers)
         
-        edge3 = EdgeModel(e_out+2*n_out+g_out,e_out,n_hidden,hidden_size,nn.ReLU,False,False)
-        node3 = NodeModel(n_out+e_out+g_out,n_out,n_hidden,hidden_size,nn.ReLU,False,False)
-        # global3 = GlobalModel(n_out+e_out+g_out,g_out,n_hidden,hidden_size,nn.ReLU,False,False)
-        global3 = GlobalModel(n_out+e_out+g_out,class_num,n_hidden,hidden_size,nn.ReLU,False,False)
-        self.meta3 = MetaLayer(edge_model = edge3,node_model=node3,global_model=global3)
-
     def forward(self,graph):
-        x, edge_attr, u = self.meta1(graph.x, graph.edge_index, graph.edge_weight, graph.u, graph.batch)
+        x = graph.x
+        edge_index  = graph.edge_index
+        edge_attr = graph.edge_weight
+        u = None
+        batch = graph.batch
 
-        x, edge_attr, u = self.meta2(x, graph.edge_index, edge_attr, u, graph.batch)
-
-        x, edge_attr, u = self.meta3(x, graph.edge_index, edge_attr, u, graph.batch)
+        for model in self.models:
+            x, edge_attr, u = model(x, edge_index, edge_attr, u, batch)
         
-        return F.sigmoid(u)
+        return edge_attr
+
+
+def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
+    single_mat_id = mat_id[k]
+    extra_path = f'./GraphData/extra{single_mat_id}.dat'
+    tensor_dict = torch.load(extra_path)
+
+    coo_A = tensor_dict['coo_A'].to(device)
+    p_index = tensor_dict['p_index'].to(device)
+    edge_flag = tensor_dict['edge_flag'].to(device)
+    edge_mask = edge_batch == k
+
+    # select edges of matrix k
+    A_edge = edge_attr[edge_mask]
+
+    # select edges belonging to matrix P
+    p_edge = A_edge[edge_flag]
+
+    # construct P
+    p_size = tensor_dict['p_size'].to(device)
+    p = torch.sparse_coo_tensor(p_index, p_edge, (p_size[0],p_size[1]) )
+
+    pre_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
+    post_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
+    coarse_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
+    tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
+    tg.Setup(coo_A,p)
+
+    node_mask = batch == k
+    single_b = b[node_mask]
+    x = torch.zeros(single_b.shape,dtype=dtype,device=device)
+    tg.Solve(single_b, x)
+    residual = single_b - coo_A @ x
+
+    norm_res = torch.linalg.vector_norm(residual)
+    return norm_res
+
+
+def OrigonalP(b, mat_id, batch, k, dtype, device):
+    single_mat_id = mat_id[k]
+    extra_path = f'./GraphData/extra{single_mat_id}.dat'
+    tensor_dict = torch.load(extra_path)
+
+    coo_A = tensor_dict['coo_A'].to(device)
+    p_index = tensor_dict['p_index'].to(device)
+    p_val = tensor_dict['p_val'].to(device)
+
+    # construct P
+    p_size = tensor_dict['p_size'].to(device)
+    p = torch.sparse_coo_tensor(p_index, p_val, (p_size[0],p_size[1]) )
+
+    pre_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
+    post_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
+    coarse_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
+    tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
+    tg.Setup(coo_A,p)
+
+    node_mask = batch == k
+    single_b = b[node_mask]
+    x = torch.zeros(single_b.shape,dtype=dtype,device=device)
+    tg.Solve(single_b, x)
+    residual = single_b - coo_A @ x
+
+    norm_res = torch.linalg.vector_norm(residual)
+    return norm_res
+
     
 class GraphWrap:
-    def __init__(self, class_num, device, criterion, learning_rate, is_float=True):
+    def __init__(self, middle_layer, device, criterion, learning_rate, is_float=False):
         if is_float:
-            self.model = GraphNet(class_num)
+            self.model = GraphNet(middle_layer)
+            self.dtype = torch.float32
         else:
-            self.model = GraphNet(class_num).double()
+            self.model = GraphNet(middle_layer).double()
+            self.dtype = torch.float64
 
         self.model = self.model.to(device)
         self.device = device
@@ -160,7 +235,6 @@ class GraphWrap:
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         self.schedule = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10,gamma=0.2)
 
-        self.out_dim = class_num
 
     def train(self, num_epochs,trainloader):
         print('begin to train')
@@ -171,10 +245,19 @@ class GraphWrap:
             ## training step
             for graphs in trainloader:
                 graphs = graphs.to(self.device)
-
-                ## forward + backprop + loss
                 out = self.model(graphs)
-                loss = self.criterion(out, graphs.y)
+
+                batch = graphs.batch
+                row_vec, _ = graphs.edge_index
+                edge_batch = batch[row_vec]
+
+                num_mat = len(graphs)
+                loss = 0
+                for k in range(num_mat):
+                    norm_res = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device)
+                    loss = loss + norm_res
+
+
                 self.optimizer.zero_grad()
                 loss.backward()
 
@@ -193,44 +276,27 @@ class GraphWrap:
 
     def test(self, testloader):
         print('begin to test')
-        stat = Stat(num_labels=self.out_dim,average=None).to(self.device)
-        final_stat = 0
         
         self.model.eval()
-        total_num = len(testloader.dataset)
-        batch_list = [] 
-        bceloss_list = []
         for graphs in testloader:
             graphs = graphs.to(self.device)
             with torch.no_grad():
                 out = self.model(graphs)
                 
-                bceloss = self.criterion(out, graphs.y)
-                print('batch bce loss: {}'.format(bceloss.item()))
-                batch_list.append( graphs.y.shape[0])
-                bceloss_list.append(bceloss.item())
+                batch = graphs.batch
+                row_vec, _ = graphs.edge_index
+                edge_batch = batch[row_vec]
+
+                num_mat = len(graphs)
+                for k in range(num_mat):
+                    norm_res = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device)
+                    print(f'mat {graphs.mat_id[k]}: the residual of the optimized P is {norm_res}')
+
+                    norm_res = OrigonalP(graphs.y,graphs.mat_id,batch,k,self.dtype,self.device)
+                    print(f'mat {graphs.mat_id[k]}: the residual of the origonal P is {norm_res}')
                 
-                s = stat(out,graphs.y.int())
-                final_stat += s
+                
 
 
-        print(f'total num = {total_num}, batch sum = {sum(batch_list)}')
-        final_bce = 0.0
-        for i in range(len(batch_list)):
-            final_bce += batch_list[i] * bceloss_list[i]
 
-        final_bce = final_bce / sum(batch_list)
-        print(f'bce loss: {final_bce}')
 
-        final_stat = final_stat.to('cpu')
-        print(f'Stat: {final_stat}')
-
-        prec_list = []
-        for i in range(final_stat.shape[0]):
-            tmp = final_stat[i,0]+final_stat[i,1] 
-            if  tmp == 0:
-                prec_list.append(0.0)
-            else:
-                prec_list.append( final_stat[i,0]/tmp )
-
-        print(f'the average precision: {sum(prec_list)/len(prec_list)}')

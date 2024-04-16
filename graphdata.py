@@ -31,35 +31,40 @@ class GraphData(torch.utils.data.Dataset):
 
         self.Process()
 
-    def Process(self,splitting='CLJP'):
+    def Process(self):
         print(f'begin to process {self.num} matrices')
         mat_template = self.root_path_mat+'/scipy_csr{}.npz'
         vec_template = self.root_path_mat+'/b{}.npy'
         graph_template = self.root_path_graph+'/graph{}.dat'
+        extra_template = self.root_path_graph+'/extra{}.dat'
         for i,idx in enumerate(self.mat_idx):
             mat_path = mat_template.format(idx)
             vec_path = vec_template.format(idx)
             graph_path = graph_template.format(idx)
+            extra_path = extra_template.format(idx)
             if not os.path.exists(graph_path):
                 print(f'begin to deal with {i}-th matrix with index {idx}')
                 scipy_csr = sparse.load_npz(mat_path)
                 scipy_coo = scipy_csr.tocoo()
 
                 # begin to construct the graph
-                ml = pyamg.ruge_stuben_solver(scipy_csr, max_levels=2, keep=True, CF=splitting)
+                # ml = pyamg.ruge_stuben_solver(scipy_csr, max_levels=2, keep=True, CF=splitting)
+                ml = pyamg.ruge_stuben_solver(scipy_csr, max_levels=2, keep=True)
                 splitting = ml.levels[0].splitting
                 coarse_node_encoding = np.zeros(splitting.shape[0])
                 fine_node_encoding = np.zeros(splitting.shape[0])
 
                 # node encoding 
-                coarse_node_encoding[splitting] = 1.0
-                fine_node_encoding[~splitting] = 1.0
+                C_flag = splitting == 1
+                F_flag = splitting == 0
+                coarse_node_encoding[C_flag] = 1.0
+                fine_node_encoding[F_flag] = 1.0
                 node_encoding = np.stack([coarse_node_encoding, fine_node_encoding]).T
                 x = torch.from_numpy(node_encoding)
                 
                 # the fine index of the coarse node
                 node_idx = np.arange(scipy_csr.shape[0])
-                coarse_idx = node_idx[splitting]
+                coarse_idx = node_idx[C_flag]
 
                 # edge encoding
                 p = ml.levels[0].P
@@ -81,10 +86,6 @@ class GraphData(torch.utils.data.Dataset):
                     b = np.ones(scipy_coo.shape[0])
                 y = torch.from_numpy(b)
 
-                # change the format of the P matrix into torch sparse matrix 
-                # then add it into the graph
-                graph_p_idx = np.stack([coo_p.row, coo_p.col])
-                graph_p = torch.sparse_coo_tensor(graph_p_idx, coo_p.data,coo_p.shape,dtype = torch.float64)
 
                 # finaly cteate the graph
                 np_row, np_col = scipy_coo.nonzero()
@@ -93,10 +94,32 @@ class GraphData(torch.utils.data.Dataset):
                 edge_index = torch.stack((torch_row,torch_col),0)
                 graph = pygdat.Data(x=x,edge_index = edge_index,edge_weight = edge_weight,y = y)
                 graph.mat_id = idx
-                graph.coarse_idx = torch.from_numpy(coarse_idx.astype(np.int64))
-                graph.p = graph_p
-
                 torch.save(graph,graph_path)
+                
+                # save variables into file for future training and testing
+                tensor_dict = {}
+
+                p_row = torch.from_numpy(coo_p.row.astype(np.int64))
+                p_col = torch.from_numpy(coo_p.col.astype(np.int64))
+                p_index = torch.stack((p_row,p_col),0)
+                tensor_dict['p_index'] = p_index
+                p_val = torch.from_numpy(coo_p.data)
+                tensor_dict['p_val'] = p_val
+                p_size = torch.tensor([coo_p.shape[0],coo_p.shape[1],coo_p.nnz])
+                tensor_dict['p_size'] = p_size
+
+                A_val = torch.from_numpy(scipy_coo.data)
+                coo_A = torch.sparse_coo_tensor(edge_index, A_val, scipy_coo.shape)
+                tensor_dict['coo_A'] = coo_A
+
+                coarse_idx = torch.from_numpy(coarse_idx.astype(np.int64))
+                tensor_dict['coarse_idx'] = coarse_idx
+
+                edge_flag = torch.from_numpy(edge_flag)
+                tensor_dict['edge_flag'] = edge_flag
+
+                torch.save(tensor_dict,extra_path)
+                
 
 
     def __len__(self):
