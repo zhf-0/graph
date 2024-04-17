@@ -92,12 +92,12 @@ class wJacoib:
         invdiag = GetInvDiagSpMat(A,self.dtype,self.device)
         I = CreateI(A.shape[0],self.dtype,self.device)
 
-        self.mat = I - self.omega * invdiag @ A
+        self.mat = I - self.weight * invdiag @ A
         self.A = A.to(self.device)
         self.invdiag = invdiag
 
     def Solve(self, b, x):
-        x = self.mat @ x + self.omega * self.invdiag @ b
+        x = self.mat @ x + self.weight * self.invdiag @ b
         return x
 
 

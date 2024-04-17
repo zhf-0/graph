@@ -65,7 +65,7 @@ def main():
 
     train_set = torch.utils.data.Subset(dataset,train_idx)
     test_set = torch.utils.data.Subset(dataset,test_idx)
-    train_loader = DataLoader(train_set,batch_size=2,shuffle=True,num_workers=2)
+    train_loader = DataLoader(train_set,batch_size=1,shuffle=True,num_workers=2)
     test_loader = DataLoader(test_set,batch_size=1,shuffle=False)
     
     device = torch.device("cuda:0")

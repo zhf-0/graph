@@ -173,7 +173,7 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
 
     # construct P
     p_size = tensor_dict['p_size'].to(device)
-    p = torch.sparse_coo_tensor(p_index, p_edge, (p_size[0],p_size[1]) )
+    p = torch.sparse_coo_tensor(p_index, p_edge.squeeze(1), (p_size[0],p_size[1]) )
 
     pre_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
     post_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
@@ -184,11 +184,10 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
-    tg.Solve(single_b, x)
-    residual = single_b - coo_A @ x
+    x = tg.Solve(single_b, x)
+    Ax = coo_A @ x
 
-    norm_res = torch.linalg.vector_norm(residual)
-    return norm_res
+    return single_b, Ax
 
 
 def OrigonalP(b, mat_id, batch, k, dtype, device):
@@ -213,11 +212,10 @@ def OrigonalP(b, mat_id, batch, k, dtype, device):
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
-    tg.Solve(single_b, x)
-    residual = single_b - coo_A @ x
+    x = tg.Solve(single_b, x)
+    Ax = coo_A @ x
 
-    norm_res = torch.linalg.vector_norm(residual)
-    return norm_res
+    return single_b, Ax
 
     
 class GraphWrap:
@@ -254,8 +252,8 @@ class GraphWrap:
                 num_mat = len(graphs)
                 loss = 0
                 for k in range(num_mat):
-                    norm_res = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device)
-                    loss = loss + norm_res
+                    b, Ax = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device)
+                    loss = loss + self.criterion(b,Ax)
 
 
                 self.optimizer.zero_grad()
@@ -289,11 +287,13 @@ class GraphWrap:
 
                 num_mat = len(graphs)
                 for k in range(num_mat):
-                    norm_res = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device)
-                    print(f'mat {graphs.mat_id[k]}: the residual of the optimized P is {norm_res}')
+                    b0, Ax0 = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device)
+                    loss0 = self.criterion(b0,Ax0)
+                    print(f'mat {graphs.mat_id[k]}: the MSE residual of the optimized P is {loss0}')
 
-                    norm_res = OrigonalP(graphs.y,graphs.mat_id,batch,k,self.dtype,self.device)
-                    print(f'mat {graphs.mat_id[k]}: the residual of the origonal P is {norm_res}')
+                    b1, Ax1 = OrigonalP(graphs.y,graphs.mat_id,batch,k,self.dtype,self.device)
+                    loss1 = self.criterion(b1,Ax1)
+                    print(f'mat {graphs.mat_id[k]}: the MSE residual of the origonal P is {loss1}')
                 
                 
 

@@ -65,11 +65,18 @@ class GraphData(torch.utils.data.Dataset):
                 # the fine index of the coarse node
                 node_idx = np.arange(scipy_csr.shape[0])
                 coarse_idx = node_idx[C_flag]
+                c2f = {}
+                for k in range(coarse_idx.shape[0]):
+                    c2f[k] = coarse_idx[k]
 
                 # edge encoding
                 p = ml.levels[0].P
                 coo_p = p.tocoo()
-                p_edge_idx = np.core.records.fromarrays([coo_p.row, coo_p.col], dtype='i,i')
+                fine_coo_p_col = np.zeros(coo_p.nnz,dtype=np.int32)
+                for k in range(coo_p.nnz):
+                    fine_coo_p_col[k] = c2f[coo_p.col[k]]
+                    
+                p_edge_idx = np.core.records.fromarrays([coo_p.row, fine_coo_p_col], dtype='i,i')
                 A_edge_idx = np.core.records.fromarrays([scipy_coo.row, scipy_coo.col], dtype='i,i')
                 edge_flag = np.in1d(A_edge_idx, p_edge_idx, assume_unique=True)
                 coarse_edge_encoding = np.zeros(scipy_coo.nnz)
