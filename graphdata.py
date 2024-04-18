@@ -99,7 +99,7 @@ class GraphData(torch.utils.data.Dataset):
                 torch_row = torch.from_numpy(np_row.astype(np.int64))
                 torch_col = torch.from_numpy(np_col.astype(np.int64))
                 edge_index = torch.stack((torch_row,torch_col),0)
-                graph = pygdat.Data(x=x,edge_index = edge_index,edge_weight = edge_weight,y = y)
+                graph = pygdat.Data(x=x,edge_index = edge_index,edge_weight = edge_weight,y = y.reshape(-1,1))
                 graph.mat_id = idx
                 torch.save(graph,graph_path)
                 

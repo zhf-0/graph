@@ -82,7 +82,7 @@ def CreateI(nrow, dtype=torch.float64, device='cpu'):
     return I 
 
 
-class wJacoib:
+class wJacobi:
     def __init__(self, weight=1.0, dtype=torch.float64, device='cpu'):
         self.weight = weight
         self.dtype = dtype
@@ -92,7 +92,7 @@ class wJacoib:
         invdiag = GetInvDiagSpMat(A,self.dtype,self.device)
         I = CreateI(A.shape[0],self.dtype,self.device)
 
-        self.mat = I - self.weight * invdiag @ A
+        self.mat = I - self.weight * (invdiag @ A)
         self.A = A.to(self.device)
         self.invdiag = invdiag
 
@@ -100,6 +100,21 @@ class wJacoib:
         x = self.mat @ x + self.weight * self.invdiag @ b
         return x
 
+def TestJacobi():
+    '''
+    A = [2, 1]
+        [1, 2] 
+    '''
+    index = torch.tensor([ [0,0,1,1],[0,1,0,1] ])
+    val = torch.tensor([2.0,1.0,1.0,2.0],dtype=torch.float64)
+    coo = torch.sparse_coo_tensor(index, val, (2,2),dtype=torch.float64 )
+
+    b = torch.tensor([1.0,1.0],dtype=torch.float64)
+    x = torch.tensor([0.0,0.0],dtype=torch.float64)
+    
+    jac = wJacobi()
+    jac.Setup(coo)
+    x = jac.Solve(b.unsqueeze(1),x.unsqueeze(1))
 
 
 #雅可比迭代
@@ -120,6 +135,9 @@ def jacobi_solver(A, diag, x, b, omega):
     x = (one-omega2) * x + omega2 * torch.sparse.mm((I - torch.sparse.mm(diag, A)), x) + torch.sparse.mm(diag, b)
             
     return x
+
+if __name__ == '__main__':
+    TestJacobi()
 
 #官方算例，结果为5.835
 # def test1():

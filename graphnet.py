@@ -175,9 +175,9 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
     p_size = tensor_dict['p_size'].to(device)
     p = torch.sparse_coo_tensor(p_index, p_edge.squeeze(1), (p_size[0],p_size[1]) )
 
-    pre_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
-    post_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
-    coarse_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
+    pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
+    post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
+    coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
     tg.Setup(coo_A,p)
 
@@ -203,9 +203,9 @@ def OrigonalP(b, mat_id, batch, k, dtype, device):
     p_size = tensor_dict['p_size'].to(device)
     p = torch.sparse_coo_tensor(p_index, p_val, (p_size[0],p_size[1]) )
 
-    pre_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
-    post_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
-    coarse_jacobi = torchamg.wJacoib(dtype=dtype,device=device)
+    pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
+    post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
+    coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
     tg.Setup(coo_A,p)
 
