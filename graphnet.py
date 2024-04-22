@@ -171,9 +171,15 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
     # select edges belonging to matrix P
     p_edge = A_edge[edge_flag]
 
-    # construct P
+    # construct P and normalize each row of the matrix P
     p_size = tensor_dict['p_size'].to(device)
-    p = torch.sparse_coo_tensor(p_index, p_edge.squeeze(1), (p_size[0],p_size[1]) )
+    p_row_index, _ = p_index
+    new_p_val = torch.zeros(p_edge.shape[0],dtype=dtype,device=device)
+    for i in range(p_size[0]):
+        mask = p_row_index == i
+        new_p_val[mask] = F.softmax(p_edge[mask,0],dim=0)
+    
+    p = torch.sparse_coo_tensor(p_index, new_p_val, (p_size[0],p_size[1]) )
 
     pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
