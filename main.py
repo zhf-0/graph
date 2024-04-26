@@ -59,7 +59,9 @@ def main():
     ratio = 0.5
     mark = int(len(mat_idx)*ratio)
     train_idx = mat_idx[0:mark]
+    print('train idx:',train_idx)
     test_idx = mat_idx[mark:]
+    print('test idx:',test_idx)
     
     dataset = GraphData(mat_idx)
 
