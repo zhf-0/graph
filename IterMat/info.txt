@@ -1,0 +1,16 @@
+scipy_csr0.npz
+	nrow = 100
+	nnz = 636
+
+scipy_csr1.npz
+	nrow = 28561
+	nnz = 695845
+
+scipy_csr2.npz
+	nrow = 16129
+	nnz = 225320
+
+scipy_csr3.npz
+	nrow = 43681
+	nnz = 344441
+

@@ -4,8 +4,110 @@ from torch.nn import Sequential as Seq, Linear as Lin,  LayerNorm
 from torch_scatter import scatter_mean, scatter_add
 from torch import nn
 from torch_geometric.nn import MetaLayer
+from torch_geometric.loader import DataLoader
 import torch.nn.functional as F
-import torchamg
+
+from gpu_mem_track import MemTracker
+gpu_tracker = MemTracker()
+
+class TwoGrid:
+    def __init__(self, pre_smoother, post_smoother, smoothing_num, coarse_solver, coarse_num, dtype=torch.float64, device='cpu'):
+        self.pre_smoother = pre_smoother
+        self.post_smoother = post_smoother
+        self.coarse_solver = coarse_solver
+        self.smoothing_num = smoothing_num
+        self.coarse_num = coarse_num
+        self.dtype = dtype
+        self.device = device
+
+    def Setup(self, A, p):
+        R = p.T
+        A_c = R @ A @ p 
+
+        self.pre_smoother.Setup(A)
+        self.post_smoother.Setup(A)
+        self.coarse_solver.Setup(A_c)
+        
+        self.P = p.to(self.device)
+        self.R = R.to(self.device)
+        self.A_c = A_c.to(self.device)
+        self.A = A.to(self.device)
+        # self.dense_A_c = A_c.to_dense().to(self.device)
+
+    def CoarseSolve(self, b, x):
+        for _ in range(self.coarse_num):
+            x = self.coarse_solver.Solve(b, x)
+
+        return x
+
+    def Solve(self, b, x):
+        if len(b.shape) == 1:
+            b = b.unsqueeze(1)
+
+        for _ in range(self.smoothing_num):
+            x = self.pre_smoother.Solve(b, x)
+
+        residual = b - self.A @ x
+
+        coarse_b = self.R @ residual
+        coarse_x = self.CoarseSolve(coarse_b, torch.zeros(coarse_b.shape,dtype=self.dtype,device=self.device) )
+        x += self.P @ coarse_x
+
+        for _ in range(self.smoothing_num):
+            x = self.post_smoother.Solve(b, x)
+
+        return x
+
+def GetDiagVec(coo_A, dtype=torch.float64, device='cpu'):
+    coo = coo_A.coalesce()
+    row_vec, col_vec = coo.indices()
+    val_vec = coo.values()
+    nrow = coo.shape[0]
+    
+    diag = torch.zeros(nrow,dtype=dtype,device=device)
+    mask = row_vec == col_vec
+    diag[row_vec[mask]] = val_vec[mask]
+
+    return diag
+
+
+def GetInvDiagSpMat(coo_A, dtype=torch.float64, device='cpu'):
+    diag = GetDiagVec(coo_A, dtype, device)
+    invdiag = 1.0 / diag
+
+    nrow = coo_A.shape[0]
+    row_vec = torch.arange(nrow,device=device)
+    col_vec = torch.arange(nrow,device=device)
+    coo_invdiag = torch.sparse_coo_tensor(torch.stack((row_vec,col_vec)),invdiag, (nrow, nrow),dtype=dtype,device=device)
+
+    return coo_invdiag
+
+def CreateI(nrow, dtype=torch.float64, device='cpu'):
+    row_vec = torch.arange(nrow,device=device)
+    col_vec = torch.arange(nrow,device=device)
+    val_vec = torch.ones(nrow,dtype=dtype,device=device)
+
+    I = torch.sparse_coo_tensor(torch.stack((row_vec,col_vec)),val_vec, (nrow, nrow),dtype=dtype,device=device)
+
+    return I 
+
+class wJacobi:
+    def __init__(self, weight=1.0, dtype=torch.float64, device='cpu'):
+        self.weight = weight
+        self.dtype = dtype
+        self.device = device
+
+    def Setup(self, A):
+        invdiag = GetInvDiagSpMat(A,self.dtype,self.device)
+        I = CreateI(A.shape[0],self.dtype,self.device)
+
+        self.mat = I - self.weight * (invdiag @ A)
+        self.A = A.to(self.device)
+        self.invdiag = invdiag
+
+    def Solve(self, b, x):
+        x = self.mat @ x + self.weight * self.invdiag @ b
+        return x
 
 
 def CreateMLP(
@@ -43,8 +145,14 @@ class EdgeModel(torch.nn.Module):
         # src, dest: [E, F_x], where E is the number of edges.
         # edge_attr: [E, F_e]
 
+        gpu_tracker.track()
+
         out = torch.cat([src, dest, edge_attr], 1)
+        gpu_tracker.track()
+
         out = self.edge_mlp(out)
+        
+        gpu_tracker.track()
         return out
 
 class NodeModel(torch.nn.Module):
@@ -58,6 +166,8 @@ class NodeModel(torch.nn.Module):
         # x: [N, F_x], where N is the number of nodes.
         # edge_index: [2, E] with max entry N - 1.
         # edge_attr: [E, F_e]
+
+        gpu_tracker.track()
 
         # the equation is: x_i = x_i + Aggr(x_j, e_ij) 
         # official
@@ -73,6 +183,8 @@ class NodeModel(torch.nn.Module):
         # out = scatter_mean(edge_attr, row, dim=0, dim_size=x.size(0))
         # out = torch.cat([x, out, u[batch]], dim=1)
         # out = self.node_mlp(out)
+
+        gpu_tracker.track()
         return out
 
 class GlobalModel(torch.nn.Module):
@@ -150,16 +262,23 @@ class GraphNet(torch.nn.Module):
         u = None
         batch = graph.batch
 
+        gpu_tracker.track()
+
         for model in self.models:
             x, edge_attr, u = model(x, edge_index, edge_attr, u, batch)
+            gpu_tracker.track()
         
         return edge_attr
 
 
 def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
+    gpu_tracker.track()
+
     single_mat_id = mat_id[k]
-    extra_path = os.path.dirname(__file__) + f'/GraphData/extra{single_mat_id}.dat'
+    extra_path = f'../GraphData/extra{single_mat_id}.dat'
     tensor_dict = torch.load(extra_path)
+
+    gpu_tracker.track()
 
     coo_A = tensor_dict['coo_A'].to(device)
     p_index = tensor_dict['p_index'].to(device)
@@ -182,24 +301,36 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
     
     p = torch.sparse_coo_tensor(p_index, new_p_val, (p_size[0],p_size[1]) )
 
-    pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
-    post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
-    coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
-    tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
+    gpu_tracker.track()
+
+    pre_jacobi = wJacobi(dtype=dtype,device=device)
+    post_jacobi = wJacobi(dtype=dtype,device=device)
+    coarse_jacobi = wJacobi(dtype=dtype,device=device)
+    tg = TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
     tg.Setup(coo_A,p)
+    
+    gpu_tracker.track()
 
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
+
+    gpu_tracker.track()
+
     x = tg.Solve(single_b, x)
+
+    gpu_tracker.track()
+
     Ax = coo_A @ x
+
+    gpu_tracker.track()
 
     return single_b, Ax
 
 
 def OrigonalP(b, mat_id, batch, k, dtype, device):
     single_mat_id = mat_id[k]
-    extra_path = os.path.dirname(__file__) + f'/GraphData/extra{single_mat_id}.dat'
+    extra_path = f'../GraphData/extra{single_mat_id}.dat'
     tensor_dict = torch.load(extra_path)
 
     coo_A = tensor_dict['coo_A'].to(device)
@@ -210,10 +341,10 @@ def OrigonalP(b, mat_id, batch, k, dtype, device):
     p_size = tensor_dict['p_size'].to(device)
     p = torch.sparse_coo_tensor(p_index, p_val, (p_size[0],p_size[1]) )
 
-    pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
-    post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
-    coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
-    tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
+    pre_jacobi = wJacobi(dtype=dtype,device=device)
+    post_jacobi = wJacobi(dtype=dtype,device=device)
+    coarse_jacobi = wJacobi(dtype=dtype,device=device)
+    tg = TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
     tg.Setup(coo_A,p)
 
     node_mask = batch == k
@@ -242,6 +373,7 @@ class GraphWrap:
 
 
     def train(self, num_epochs,trainloader):
+        gpu_tracker.track()
         print('begin to train')
         self.model.train()
         i = 0
@@ -250,7 +382,12 @@ class GraphWrap:
             ## training step
             for graphs in trainloader:
                 graphs = graphs.to(self.device)
+
+                gpu_tracker.track()
+
                 out = self.model(graphs)
+
+                gpu_tracker.track()
 
                 batch = graphs.batch
                 row_vec, _ = graphs.edge_index
@@ -263,11 +400,20 @@ class GraphWrap:
                     loss = loss + self.criterion(b,Ax)
 
 
+                gpu_tracker.track()
+
                 self.optimizer.zero_grad()
+
+                gpu_tracker.track()
+
                 loss.backward()
+
+                gpu_tracker.track()
 
                 ## update model params
                 self.optimizer.step()
+
+                gpu_tracker.track()
 
                 train_running_loss = loss.item()
             
@@ -301,9 +447,28 @@ class GraphWrap:
                     b1, Ax1 = OrigonalP(graphs.y,graphs.mat_id,batch,k,self.dtype,self.device)
                     loss1 = self.criterion(b1,Ax1)
                     print(f'mat {graphs.mat_id[k]}: the MSE residual of the origonal P is {loss1}')
-                
-                
 
 
+gpu_tracker.track()
 
+# graph0 = torch.load('../GraphData/graph0.dat')
+graph0 = torch.load('../GraphData/graph2.dat')
+dataset = [graph0]
+loader = DataLoader(dataset,batch_size=1,shuffle=False)
 
+gpu_tracker.track()
+
+device = torch.device("cuda:0")
+criterion = nn.MSELoss().to(device)
+learning_rate = 0.001
+middle_layer = 2
+
+gpu_tracker.track()
+
+model = GraphWrap(middle_layer,device,criterion,learning_rate)
+
+gpu_tracker.track()
+
+model.train(1,loader)
+
+gpu_tracker.track()

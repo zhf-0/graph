@@ -105,9 +105,9 @@ def t6():
 # A = t1()
 # A = t2()
 # A = t3()
-# A = t4()
+A = t4()
 # A = t5()
-A = t6()
+# A = t6()
 
 b = torch.ones(2,1,dtype=torch.float64,requires_grad=True)
 a = A @ b

@@ -162,3 +162,4 @@ cython_debug/
 # personal
 GraphData/
 MatData/
+TestMemory/log*

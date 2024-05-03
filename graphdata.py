@@ -84,7 +84,7 @@ class GraphData(torch.utils.data.Dataset):
                 coarse_edge_encoding[edge_flag] = 1.0
                 fine_edge_encoding[~edge_flag] = 1.0
                 edge_encoding = np.stack([scipy_coo.data,coarse_edge_encoding,fine_edge_encoding]).T
-                edge_weight = torch.from_numpy(edge_encoding)
+                edge_attr = torch.from_numpy(edge_encoding)
 
                 # if there is a file saving the rhs vector, read it; otherwise create one
                 if os.path.exists(vec_path):
@@ -99,7 +99,7 @@ class GraphData(torch.utils.data.Dataset):
                 torch_row = torch.from_numpy(np_row.astype(np.int64))
                 torch_col = torch.from_numpy(np_col.astype(np.int64))
                 edge_index = torch.stack((torch_row,torch_col),0)
-                graph = pygdat.Data(x=x,edge_index = edge_index,edge_weight = edge_weight,y = y.reshape(-1,1))
+                graph = pygdat.Data(x=x,edge_index = edge_index,edge_attr = edge_attr,y = y.reshape(-1,1))
                 graph.mat_id = idx
                 torch.save(graph,graph_path)
                 
