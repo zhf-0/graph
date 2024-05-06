@@ -174,25 +174,33 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
 
     # construct P and normalize each row of the matrix P
     p_size = tensor_dict['p_size'].to(device)
-    p_row_index, _ = p_index
+    coo_p = torch.sparse_coo_tensor(p_index, p_edge, (p_size[0],p_size[1]))
+    csr_p = coo_p.to_sparse_csr()
+
+    p_row_vec = csr_p.crow_indices()
+    p_col_vec = csr_p.col_indices()
+    p_val_vec = csr_p.values()
+
     new_p_val = torch.zeros(p_edge.shape[0],dtype=dtype,device=device)
     for i in range(p_size[0]):
-        mask = p_row_index == i
-        new_p_val[mask] = F.softmax(p_edge[mask,0],dim=0)
-    
-    p = torch.sparse_coo_tensor(p_index, new_p_val, (p_size[0],p_size[1]) )
+        begin_idx = p_row_vec[i]
+        end_idx = p_row_vec[i+1]
+        new_p_val[begin_idx:end_idx] = F.softmax(p_val_vec[begin_idx:end_idx],dim=0)
+
+    csr_p = torch.sparse_csr_tensor(p_row_vec, p_col_vec, new_p_val, size=(p_size[0],p_size[1]) )
+    csr_A = coo_A.to_sparse_csr()
 
     pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
-    tg.Setup(coo_A,p)
+    tg.Setup(csr_A,csr_p)
 
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
     x = tg.Solve(single_b, x)
-    Ax = coo_A @ x
+    Ax = csr_A @ x
 
     return single_b, Ax
 
@@ -210,17 +218,20 @@ def OrigonalP(b, mat_id, batch, k, dtype, device):
     p_size = tensor_dict['p_size'].to(device)
     p = torch.sparse_coo_tensor(p_index, p_val, (p_size[0],p_size[1]) )
 
+    csr_p = p.to_sparse_csr() 
+    csr_A = coo_A.to_sparse_csr()
+
     pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
-    tg.Setup(coo_A,p)
+    tg.Setup(csr_A,csr_p)
 
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
     x = tg.Solve(single_b, x)
-    Ax = coo_A @ x
+    Ax = csr_A @ x
 
     return single_b, Ax
 
