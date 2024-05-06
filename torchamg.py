@@ -48,8 +48,9 @@ class TwoGrid:
 
         return x
 
-def GetDiagVec(coo_A, dtype=torch.float64, device='cpu'):
-    coo = coo_A.coalesce()
+
+def GetDiagVec(csr_A, dtype=torch.float64, device='cpu'):
+    coo = csr_A.to_sparse_coo().coalesce()
     row_vec, col_vec = coo.indices()
     val_vec = coo.values()
     nrow = coo.shape[0]
@@ -59,6 +60,31 @@ def GetDiagVec(coo_A, dtype=torch.float64, device='cpu'):
     diag[row_vec[mask]] = val_vec[mask]
 
     return diag
+
+
+def GetInvDiagSpMat(csr_A, dtype=torch.float64, device='cpu'):
+    diag = GetDiagVec(csr_A, dtype, device)
+    invdiag = 1.0 / diag
+
+    nrow = csr_A.shape[0]
+    row_vec = torch.arange(nrow,device=device)
+    col_vec = torch.arange(nrow,device=device)
+    coo_invdiag = torch.sparse_coo_tensor(torch.stack((row_vec,col_vec)),invdiag, (nrow, nrow),dtype=dtype,device=device)
+    csr_invdiag = coo_invdiag.to_sparse_csr()
+
+    return csr_invdiag
+
+
+def CreateI(nrow, dtype=torch.float64, device='cpu'):
+    row_vec = torch.arange(nrow,device=device)
+    col_vec = torch.arange(nrow,device=device)
+    val_vec = torch.ones(nrow,dtype=dtype,device=device)
+
+    I = torch.sparse_coo_tensor(torch.stack((row_vec,col_vec)),val_vec, (nrow, nrow),dtype=dtype,device=device)
+    I = I.to_sparse_csr()
+
+    return I 
+
 
 def GetTriMat(coo_A, dtype=torch.float64, device='cpu'):
     coo = coo_A.coalesce()
@@ -109,26 +135,6 @@ def GetInvLowerTriSpMat(coo_A, dtype=torch.float64, device='cpu'):
     coo_uptri = torch.sparse_coo_tensor(torch.stack((row_vec[mask],col_vec[mask])),val_vec[mask], (nrow, nrow),dtype=dtype,device=device)
     return coo_invlowtri, coo_uptri
 
-
-def GetInvDiagSpMat(coo_A, dtype=torch.float64, device='cpu'):
-    diag = GetDiagVec(coo_A, dtype, device)
-    invdiag = 1.0 / diag
-
-    nrow = coo_A.shape[0]
-    row_vec = torch.arange(nrow,device=device)
-    col_vec = torch.arange(nrow,device=device)
-    coo_invdiag = torch.sparse_coo_tensor(torch.stack((row_vec,col_vec)),invdiag, (nrow, nrow),dtype=dtype,device=device)
-
-    return coo_invdiag
-
-def CreateI(nrow, dtype=torch.float64, device='cpu'):
-    row_vec = torch.arange(nrow,device=device)
-    col_vec = torch.arange(nrow,device=device)
-    val_vec = torch.ones(nrow,dtype=dtype,device=device)
-
-    I = torch.sparse_coo_tensor(torch.stack((row_vec,col_vec)),val_vec, (nrow, nrow),dtype=dtype,device=device)
-
-    return I 
 
 class Conjugate_gradient:
     def __init__(self, dtype=torch.float64, device='cpu'):
