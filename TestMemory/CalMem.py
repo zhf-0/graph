@@ -81,9 +81,14 @@ mem = num_para * 8 /(10**6)
 print('number of parameter:',num_para)
 print(f'gpu memory of parameter is: {mem}M')
 
+# csr = sparse.load_npz('../MatData/scipy_csr0.npz')
+# csr = sparse.load_npz('../MatData/scipy_csr1.npz')
+# csr = sparse.load_npz('../MatData/scipy_csr2.npz')
+csr = sparse.load_npz('../MatData/scipy_csr3.npz')
+nrow = csr.shape[0]
+nnz = csr.nnz
+print(f'nrow = {nrow}, nnz = {nnz}')
 
-nrow = 100
-nnz = 636
 # total_mid = nrow*(node_intermid+1) + nnz*(edge_intermid+1)
 total_mid = nrow*(node_intermid) + nnz*(edge_intermid)
 print('node intermid layer:',node_intermid)

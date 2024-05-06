@@ -94,6 +94,10 @@ class MemTracker(object):
                         f" Total Allocated Memory:{self.get_allocate_usage():<7.1f}Mb\n\n")
                 self.begin = False
 
+            f.write(f"\nAt {where_str:<50}"
+                    f" Total Tensor Used Memory:{self.get_tensor_usage():<7.1f}Mb"
+                    f" Total Allocated Memory:{self.get_allocate_usage():<7.1f}Mb\n")
+
             if self.print_detail is True:
                 ts_list = [(tensor.size(), tensor.dtype) for tensor in self.get_tensors()]
                 new_tensor_sizes = {(type(x),
@@ -108,6 +112,83 @@ class MemTracker(object):
 
                 self.last_tensor_sizes = new_tensor_sizes
 
+            f.write('\n')
+
+    def get_tensors2(self,frameinfo):
+        """
+        Track the GPU memory usage by inspect
+        """
+        res = {}
+        for k,obj in frameinfo.frame.f_locals.items(): 
+            try:
+                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+                    tensor = obj
+                else:
+                    continue
+                if tensor.is_cuda:
+                    res[k] = obj
+            except Exception as e:
+                if self.verbose:
+                    print('A trivial exception occured: {}'.format(e))
+                    
+        return res
+
+    def track2(self):
+        """
+        Track the GPU memory usage by inspect
+        """
+        frameinfo = inspect.stack()[1]
+        where_str = frameinfo.filename + ' line ' + str(frameinfo.lineno) + ': ' + frameinfo.function
+
+        with open(self.gpu_profile_fn, 'a+') as f:
+
+            if self.begin:
+                f.write(f"GPU Memory Track | {datetime.datetime.now():%d-%b-%y-%H:%M:%S} |"
+                        f" Total Allocated Memory:{self.get_allocate_usage():<7.1f}Mb\n\n")
+                self.begin = False
+
+            if self.print_detail is True:
+                res = self.get_tensors2(frameinfo)
+                for name,v in res.items():
+                    var_type = type(v)
+                    var_size = tuple(v.size())
+                    var_mem = np.prod(np.array(v.size()))*get_mem_space(v.dtype)/1024**2
+
+                    f.write(f'Name:{str(name):<10} | Size:{str(var_size):<20} | Memory: {str(var_mem)[:6]} M | {str(var_type):<20} | {v.dtype}\n')
+
+
             f.write(f"\nAt {where_str:<50}"
-                    f" Total Tensor Used Memory:{self.get_tensor_usage():<7.1f}Mb"
                     f" Total Allocated Memory:{self.get_allocate_usage():<7.1f}Mb\n\n")
+
+    def track3(self):
+        """
+        Track the GPU memory usage
+        """
+        frameinfo = inspect.stack()[1]
+        where_str = frameinfo.filename + ' line ' + str(frameinfo.lineno) + ': ' + frameinfo.function
+
+        with open(self.gpu_profile_fn, 'a+') as f:
+
+            if self.begin:
+                f.write(f"GPU Memory Track | {datetime.datetime.now():%d-%b-%y-%H:%M:%S} |"
+                        f" Total Allocated Memory:{self.get_allocate_usage():<7.1f}Mb\n\n")
+                self.begin = False
+
+            f.write(f"\nAt {where_str:<50}"
+                    f" Total Allocated Memory:{self.get_allocate_usage():<7.1f}Mb\n")
+
+            if self.print_detail is True:
+                ts_list = [(tensor.size(), tensor.dtype) for tensor in self.get_tensors()]
+
+                for x in self.get_tensors():
+                    x_type = type(x)
+                    x_size = tuple(x.size())
+                    x_n = ts_list.count((x_size,x_type))
+                    x_mem = np.prod(np.array(x.size()))*get_mem_space(x.dtype)/1024**2
+                    data_type = x.dtype
+                    f.write(f'| {str(x_n)} * Size:{str(x_size):<20} | Memory: {str(x_n*x_mem)[:6]} M | {str(x_type):<20} | {data_type}\n')
+
+            f.write('\n')
+
+
+
