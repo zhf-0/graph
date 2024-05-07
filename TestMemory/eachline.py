@@ -21,7 +21,7 @@ class TwoGrid:
         self.device = device
 
     def Setup(self, A, p):
-        R = p.T
+        R = p.t().to_sparse_csr()
         A_c = R @ A @ p 
 
         self.pre_smoother.Setup(A)
@@ -58,8 +58,8 @@ class TwoGrid:
 
         return x
 
-def GetDiagVec(coo_A, dtype=torch.float64, device='cpu'):
-    coo = coo_A.coalesce()
+def GetDiagVec(csr_A, dtype=torch.float64, device='cpu'):
+    coo = csr_A.to_sparse_coo().coalesce()
     row_vec, col_vec = coo.indices()
     val_vec = coo.values()
     nrow = coo.shape[0]
@@ -71,16 +71,17 @@ def GetDiagVec(coo_A, dtype=torch.float64, device='cpu'):
     return diag
 
 
-def GetInvDiagSpMat(coo_A, dtype=torch.float64, device='cpu'):
-    diag = GetDiagVec(coo_A, dtype, device)
+def GetInvDiagSpMat(csr_A, dtype=torch.float64, device='cpu'):
+    diag = GetDiagVec(csr_A, dtype, device)
     invdiag = 1.0 / diag
 
-    nrow = coo_A.shape[0]
+    nrow = csr_A.shape[0]
     row_vec = torch.arange(nrow,device=device)
     col_vec = torch.arange(nrow,device=device)
     coo_invdiag = torch.sparse_coo_tensor(torch.stack((row_vec,col_vec)),invdiag, (nrow, nrow),dtype=dtype,device=device)
+    csr_invdiag = coo_invdiag.to_sparse_csr()
 
-    return coo_invdiag
+    return csr_invdiag
 
 def CreateI(nrow, dtype=torch.float64, device='cpu'):
     row_vec = torch.arange(nrow,device=device)
@@ -88,6 +89,7 @@ def CreateI(nrow, dtype=torch.float64, device='cpu'):
     val_vec = torch.ones(nrow,dtype=dtype,device=device)
 
     I = torch.sparse_coo_tensor(torch.stack((row_vec,col_vec)),val_vec, (nrow, nrow),dtype=dtype,device=device)
+    I = I.to_sparse_csr()
 
     return I 
 
@@ -99,14 +101,14 @@ class wJacobi:
 
     def Setup(self, A):
         invdiag = GetInvDiagSpMat(A,self.dtype,self.device)
-        I = CreateI(A.shape[0],self.dtype,self.device)
 
-        self.mat = I - self.weight * (invdiag @ A)
+        # self.mat = I - self.weight * (invdiag @ A)
+        self.mat = self.weight * (invdiag @ A)
         self.A = A.to(self.device)
         self.invdiag = invdiag
 
     def Solve(self, b, x):
-        x = self.mat @ x + self.weight * self.invdiag @ b
+        x = x - self.mat @ x + self.weight * self.invdiag @ b
         return x
 
 
@@ -293,13 +295,21 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
 
     # construct P and normalize each row of the matrix P
     p_size = tensor_dict['p_size'].to(device)
-    p_row_index, _ = p_index
+    coo_p = torch.sparse_coo_tensor(p_index, p_edge.unsqueeze(1), (p_size[0],p_size[1]))
+    csr_p = coo_p.to_sparse_csr()
+
+    p_row_vec = csr_p.crow_indices()
+    p_col_vec = csr_p.col_indices()
+    p_val_vec = csr_p.values()
+
     new_p_val = torch.zeros(p_edge.shape[0],dtype=dtype,device=device)
     for i in range(p_size[0]):
-        mask = p_row_index == i
-        new_p_val[mask] = F.softmax(p_edge[mask,0],dim=0)
-    
-    p = torch.sparse_coo_tensor(p_index, new_p_val, (p_size[0],p_size[1]) )
+        begin_idx = p_row_vec[i]
+        end_idx = p_row_vec[i+1]
+        new_p_val[begin_idx:end_idx] = F.softmax(p_val_vec[begin_idx:end_idx],dim=0)
+
+    csr_p = torch.sparse_csr_tensor(p_row_vec, p_col_vec, new_p_val, size=(p_size[0],p_size[1]) )
+    csr_A = coo_A.to_sparse_csr()
 
     gpu_tracker.track()
 
@@ -307,21 +317,13 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
     post_jacobi = wJacobi(dtype=dtype,device=device)
     coarse_jacobi = wJacobi(dtype=dtype,device=device)
     tg = TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
-    tg.Setup(coo_A,p)
-    
-    gpu_tracker.track()
+    tg.Setup(csr_A,csr_p)
 
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
-
-    gpu_tracker.track()
-
     x = tg.Solve(single_b, x)
-
-    gpu_tracker.track()
-
-    Ax = coo_A @ x
+    Ax = csr_A @ x
 
     gpu_tracker.track()
 
@@ -341,17 +343,20 @@ def OrigonalP(b, mat_id, batch, k, dtype, device):
     p_size = tensor_dict['p_size'].to(device)
     p = torch.sparse_coo_tensor(p_index, p_val, (p_size[0],p_size[1]) )
 
+    csr_p = p.to_sparse_csr() 
+    csr_A = coo_A.to_sparse_csr()
+
     pre_jacobi = wJacobi(dtype=dtype,device=device)
     post_jacobi = wJacobi(dtype=dtype,device=device)
     coarse_jacobi = wJacobi(dtype=dtype,device=device)
     tg = TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
-    tg.Setup(coo_A,p)
+    tg.Setup(csr_A,csr_p)
 
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
     x = tg.Solve(single_b, x)
-    Ax = coo_A @ x
+    Ax = csr_A @ x
 
     return single_b, Ax
 

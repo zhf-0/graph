@@ -11,7 +11,7 @@ class TwoGrid:
         self.device = device
 
     def Setup(self, A, p):
-        R = p.T
+        R = p.t().to_sparse_csr()
         A_c = R @ A @ p 
 
         self.pre_smoother.Setup(A)
@@ -180,14 +180,14 @@ class wJacobi:
 
     def Setup(self, A):
         invdiag = GetInvDiagSpMat(A,self.dtype,self.device)
-        I = CreateI(A.shape[0],self.dtype,self.device)
 
-        self.mat = I - self.weight * (invdiag @ A)
+        # self.mat = I - self.weight * (invdiag @ A)
+        self.mat = self.weight * (invdiag @ A)
         self.A = A.to(self.device)
         self.invdiag = invdiag
 
     def Solve(self, b, x):
-        x = self.mat @ x + self.weight * self.invdiag @ b
+        x = x - self.mat @ x + self.weight * self.invdiag @ b
         return x
 
 
