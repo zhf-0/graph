@@ -295,7 +295,7 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
 
     # construct P and normalize each row of the matrix P
     p_size = tensor_dict['p_size'].to(device)
-    coo_p = torch.sparse_coo_tensor(p_index, p_edge.unsqueeze(1), (p_size[0],p_size[1]))
+    coo_p = torch.sparse_coo_tensor(p_index, p_edge.squeeze(1), (p_size[0],p_size[1]))
     csr_p = coo_p.to_sparse_csr()
 
     p_row_vec = csr_p.crow_indices()
