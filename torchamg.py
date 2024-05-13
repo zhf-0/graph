@@ -52,7 +52,7 @@ class TwoGrid:
         error = threshold+1
         iters = 0
         iter_time = 0
-        while (error>threshold) and (iter<max_iter):
+        while (error>threshold) and (iters<max_iter):
             t1 = time.perf_counter()
             x = self.Solve(b, x)
             t2 = time.perf_counter()
