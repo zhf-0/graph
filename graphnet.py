@@ -7,7 +7,7 @@ from torch_geometric.nn import MetaLayer
 import torch.nn.functional as F
 import torchamg
 import wandb
-
+import numpy as np
 def CreateMLP(
     in_size,
     out_size,
@@ -281,11 +281,12 @@ class GraphWrap:
         print('begin to train')
         self.model.train()
         if self.use_wandb:
-            wandb.watch(self.model, log="all", log_freq=1)
-        i = 0
+            wandb.watch(self.model, log="gradients", log_freq=1)
+        
         train_loss_list = []
         for epoch in range(num_epochs):
             ## training step
+            i = 0
             for graphs in trainloader:
                 graphs = graphs.to(self.device)
                 out = self.model(graphs)
@@ -334,6 +335,13 @@ class GraphWrap:
                 edge_batch = batch[row_vec]
 
                 num_mat = len(graphs)
+                mat_list = []
+                iters_model_list = []
+                error_model_list = []
+                time_model_list = []
+                iters_base_list = []
+                error_base_list = []
+                time_base_list = []
                 for k in range(num_mat):
                     x_model, iters_model, error_model, time_model = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device,
                                                                             run_type="test",smoothing_num=self.smoothing_num,coarse_num=self.coarse_num,
@@ -341,18 +349,36 @@ class GraphWrap:
                     x_base, iters_base, error_base, time_base = OriginalP(graphs.y,graphs.mat_id,batch,k,self.dtype,self.device,
                                                                           run_type="test",smoothing_num=self.smoothing_num,coarse_num=self.coarse_num,
                                                                             max_iter=self.max_iter,threshold=self.threshold)
-                    print('-'*84)
-                    print(f'Test mat {graphs.mat_id[k]}: Optimized P with  MSE: {error_model:.4e} | Iterations: {iters_model:3d} | Time used: {time_model:.4f}s')
-                    print(f'Test mat {graphs.mat_id[k]}: Original  P with  MSE: {error_base:.4e} | Iterations: {iters_base:3d} | Time used: {time_base:.4f}s')
-                    if self.use_wandb:
-                        wandb.log({"MSE residual of the optimized P":error_model,
-                                    "MSE residual of the original P":error_base,
-                                    "Iterations of the optimized P":iters_model,
-                                    "Iterations of the original P":iters_base,
-                                    "Time used of the optimized P":time_model,
-                                    "Time used of the original P":time_base,})
-                
-                
+                    print('-'*87)
+                    print(f'Test mat {graphs.mat_id[k]:4d}: Optimized P with  MSE: {error_model:.4e} | Iterations: {iters_model:3d} | Time used: {time_model:.4f}s')
+                    print(f'Test mat {graphs.mat_id[k]:4d}: Original  P with  MSE: {error_base:.4e} | Iterations: {iters_base:3d} | Time used: {time_base:.4f}s')
+                    iters_model_list.append(iters_model)
+                    error_model_list.append(error_model.detach().cpu().numpy())
+                    time_model_list.append(time_model)
+                    iters_base_list.append(iters_base)
+                    error_base_list.append(error_base.detach().cpu().numpy())
+                    time_base_list.append(time_base)
+                    mat_list.append(int(graphs.mat_id[k].detach().cpu().numpy()))
+                print('-'*87)
+                print('='*88)
+                print("TEST RESLUT: ")
+                print(f"Optimized P with: Mean MSE: {np.mean(error_model_list):.4e} | Mean Iterations: {np.mean(iters_model_list):3.2f} | Mean Time used: {np.mean(time_model_list):.4f}")
+                print(f"Original  P with: Mean MSE: {np.mean(error_base_list):.4e} | Mean Iterations: {np.mean(iters_base_list):3.2f} | Mean Time used: {np.mean(time_base_list):.4f}")
+                print('='*88)
+                if self.use_wandb:
+                    wandb.log({"test iters":wandb.plot.line_series(xs=list(range(num_mat)),
+                                                        ys=[iters_model_list, iters_base_list],
+                                                        keys=['model', 'origin'],
+                                                        title="Test iters",
+                                                        xname="Mat ids"),
+                                "test time":wandb.plot.line_series(xs=list(range(num_mat)),
+                                                        ys=[time_model_list, time_base_list],
+                                                        keys=['model', 'origin'],
+                                                        title="Test time",
+                                                        xname="Mat ids")
+                                                        })
+
+
 
 
 
