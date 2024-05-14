@@ -351,9 +351,5 @@ class GraphWrap:
                                     "Iterations of the original P":iters_base,
                                     "Time used of the optimized P":time_model,
                                     "Time used of the original P":time_base,})
-                
-                
-
-
 
 

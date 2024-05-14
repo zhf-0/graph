@@ -82,9 +82,9 @@ print('number of parameter:',num_para)
 print(f'gpu memory of parameter is: {mem}M')
 
 # csr = sparse.load_npz('../MatData/scipy_csr0.npz')
-# csr = sparse.load_npz('../MatData/scipy_csr1.npz')
+csr = sparse.load_npz('../MatData/scipy_csr1.npz')
 # csr = sparse.load_npz('../MatData/scipy_csr2.npz')
-csr = sparse.load_npz('../MatData/scipy_csr3.npz')
+# csr = sparse.load_npz('../MatData/scipy_csr3.npz')
 nrow = csr.shape[0]
 nnz = csr.nnz
 print(f'nrow = {nrow}, nnz = {nnz}')
