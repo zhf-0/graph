@@ -6,7 +6,7 @@ from torch import nn
 from torch_geometric.nn import MetaLayer
 import torch.nn.functional as F
 import torchamg
-
+import wandb
 
 def CreateMLP(
     in_size,
@@ -156,7 +156,17 @@ class GraphNet(torch.nn.Module):
         return edge_attr
 
 
-def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
+def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device,
+            run_type="train",smoothing_num=3,coarse_num=10,max_iter=100,threshold=1e-4):
+    """
+    Parameters
+    ------------
+        ...
+
+        ...
+        run_type: "train" | "test"
+            Different strategy for train or test
+    """
     single_mat_id = mat_id[k]
     extra_path = os.path.dirname(__file__) + f'/GraphData/extra{single_mat_id}.dat'
     tensor_dict = torch.load(extra_path)
@@ -193,19 +203,25 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device):
     pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
-    tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
+    tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,smoothing_num,coarse_jacobi,coarse_num,dtype,device)
     tg.Setup(csr_A,csr_p)
 
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
-    x = tg.Solve(single_b, x)
-    Ax = csr_A @ x
+    if run_type == "train":
+        x = tg.Solve(single_b, x)
+        Ax = csr_A @ x
+        return single_b, Ax
+    elif run_type == "test":
+        x, iters, error, time_used = tg.Multi_Solve(single_b, x, max_iter=max_iter, threshold=threshold)
+        return x, iters, error, time_used
+    else:
+        raise ValueError("run_type must be train or test mode!")
 
-    return single_b, Ax
 
-
-def OrigonalP(b, mat_id, batch, k, dtype, device):
+def OriginalP(b, mat_id, batch, k, dtype, device, 
+              run_type="train",smoothing_num=3,coarse_num=10,max_iter=100,threshold=1e-4):
     single_mat_id = mat_id[k]
     extra_path = os.path.dirname(__file__) + f'/GraphData/extra{single_mat_id}.dat'
     tensor_dict = torch.load(extra_path)
@@ -224,37 +240,48 @@ def OrigonalP(b, mat_id, batch, k, dtype, device):
     pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
-    tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,3,coarse_jacobi,10,dtype,device)
+    tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,smoothing_num,coarse_jacobi,coarse_num,dtype,device)
     tg.Setup(csr_A,csr_p)
 
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
-    x = tg.Solve(single_b, x)
-    Ax = csr_A @ x
-
-    return single_b, Ax
+    if run_type == "train":
+        x = tg.Solve(single_b, x)
+        Ax = csr_A @ x
+        return single_b, Ax
+    elif run_type == "test":
+        x, iters, error, time_used = tg.Multi_Solve(single_b, x, max_iter=max_iter, threshold=threshold)
+        return x, iters, error, time_used
+    else:
+        raise ValueError("run_type must be train or test mode!")
 
     
 class GraphWrap:
-    def __init__(self, middle_layer, device, criterion, learning_rate, is_float=False):
+    def __init__(self, middle_layer, device, criterion, learning_rate, is_float=False,
+                 use_wandb=False,step_size=10,gamma=0.2,smoothing_num=3,coarse_num=10,max_iter=100,threshold=1e-4):
         if is_float:
             self.model = GraphNet(middle_layer)
             self.dtype = torch.float32
         else:
             self.model = GraphNet(middle_layer).double()
             self.dtype = torch.float64
-
+        self.learning_rate = learning_rate
         self.model = self.model.to(device)
         self.device = device
         self.criterion = criterion
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
-        self.schedule = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10,gamma=0.2)
-
-
+        self.schedule = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=step_size,gamma=gamma)
+        self.use_wandb = use_wandb
+        self.smoothing_num=smoothing_num
+        self.coarse_num = coarse_num
+        self.max_iter = max_iter
+        self.threshold = threshold
     def train(self, num_epochs,trainloader):
         print('begin to train')
         self.model.train()
+        if self.use_wandb:
+            wandb.watch(self.model, log="all", log_freq=1)
         i = 0
         train_loss_list = []
         for epoch in range(num_epochs):
@@ -270,7 +297,9 @@ class GraphWrap:
                 num_mat = len(graphs)
                 loss = 0
                 for k in range(num_mat):
-                    b, Ax = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device)
+                    b, Ax = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device,
+                                    run_type="train",smoothing_num=self.smoothing_num,coarse_num=self.coarse_num,
+                                    max_iter=self.max_iter,threshold=self.threshold)
                     loss = loss + self.criterion(b,Ax)
 
 
@@ -280,8 +309,9 @@ class GraphWrap:
                 ## update model params
                 self.optimizer.step()
 
-                train_running_loss = loss.item()
-            
+                train_running_loss = loss.item()/num_mat
+                if self.use_wandb:
+                    wandb.log({"train loss":train_running_loss})
                 print('Epoch: {:3} | Batch: {:3}| Loss: {:6.4f} '.format(epoch,i,train_running_loss))
 
                 i = i + 1
@@ -305,13 +335,22 @@ class GraphWrap:
 
                 num_mat = len(graphs)
                 for k in range(num_mat):
-                    b0, Ax0 = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device)
-                    loss0 = self.criterion(b0,Ax0)
-                    print(f'mat {graphs.mat_id[k]}: the MSE residual of the optimized P is {loss0}')
-
-                    b1, Ax1 = OrigonalP(graphs.y,graphs.mat_id,batch,k,self.dtype,self.device)
-                    loss1 = self.criterion(b1,Ax1)
-                    print(f'mat {graphs.mat_id[k]}: the MSE residual of the origonal P is {loss1}')
+                    x_model, iters_model, error_model, time_model = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device,
+                                                                            run_type="test",smoothing_num=self.smoothing_num,coarse_num=self.coarse_num,
+                                                                            max_iter=self.max_iter,threshold=self.threshold)
+                    x_base, iters_base, error_base, time_base = OriginalP(graphs.y,graphs.mat_id,batch,k,self.dtype,self.device,
+                                                                          run_type="test",smoothing_num=self.smoothing_num,coarse_num=self.coarse_num,
+                                                                            max_iter=self.max_iter,threshold=self.threshold)
+                    print('-'*84)
+                    print(f'Test mat {graphs.mat_id[k]}: Optimized P with  MSE: {error_model:.4e} | Iterations: {iters_model:3d} | Time used: {time_model:.4f}s')
+                    print(f'Test mat {graphs.mat_id[k]}: Original  P with  MSE: {error_base:.4e} | Iterations: {iters_base:3d} | Time used: {time_base:.4f}s')
+                    if self.use_wandb:
+                        wandb.log({"MSE residual of the optimized P":error_model,
+                                    "MSE residual of the original P":error_base,
+                                    "Iterations of the optimized P":iters_model,
+                                    "Iterations of the original P":iters_base,
+                                    "Time used of the optimized P":time_model,
+                                    "Time used of the original P":time_base,})
                 
                 
 

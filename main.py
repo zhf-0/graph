@@ -12,8 +12,8 @@ from torch_geometric.loader import DataLoader
 
 from graphdata import GraphData
 from graphnet import GraphWrap
-
-
+import wandb
+import yaml
 # def plot_loss(loss_list,num_batch,num_epoch,epoch_step,name):
 #     x = list(range(num_batch))
 #     fig, ax = plt.subplots(1,1)
@@ -43,41 +43,59 @@ def setup_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
-def main():
-    num_epochs = 30
-    epoch_step = 1
-    learning_rate = 0.0001
-    random_seed = 1
-    setup_seed(random_seed)
+def main(configFile="./config.yaml"):
+    with open(configFile, 'r', encoding='utf-8') as f:
+        config = yaml.load(f.read(), Loader=yaml.FullLoader)
+        c_project = config["project"]
+        c_data = config["data"]
+        c_train = config["train"]
+        c_model = config["model"]
+    if c_project['use_wandb']:
+        wandb.init(project=c_project["project_name"],
+                    entity=None,
+                    name=c_project["exp_name"],
+                    config=config)
+    setup_seed(c_project["seed"])
 
-    # mat_idx = list(np.load('./idx.npy'))
-    # train_idx = list(np.load('./trainidx.npy'))
-    # test_idx = list(np.load('./testidx.npy'))
-
-    mat_idx = list(range(4))
+    ## data part
+    mat_idx = list(range(c_data['mat_nums']))
     random.shuffle(mat_idx)
-    ratio = 0.5
-    mark = int(len(mat_idx)*ratio)
+    mark = int(len(mat_idx)*c_data['train_ratio'])
     train_idx = mat_idx[0:mark]
-    print('train idx:',train_idx)
+    print("trian num: ", len(train_idx))
     test_idx = mat_idx[mark:]
-    print('test idx:',test_idx)
-    
+    print("test num: ", len(test_idx))
     dataset = GraphData(mat_idx)
-
+    batch_size = c_data["batch_size"]
     train_set = torch.utils.data.Subset(dataset,train_idx)
     test_set = torch.utils.data.Subset(dataset,test_idx)
-    train_loader = DataLoader(train_set,batch_size=1,shuffle=True,num_workers=2)
-    test_loader = DataLoader(test_set,batch_size=1,shuffle=False)
-    
-    device = torch.device("cuda:0")
-    # device = torch.device("cpu")
-    criterion = nn.MSELoss().to(device)
+    train_loader = DataLoader(train_set,batch_size=batch_size,shuffle=True,num_workers=c_project["num_workers"])
+    test_loader = DataLoader(test_set,batch_size=batch_size,shuffle=False)
 
-    middle_layer = 2
-    model = GraphWrap(middle_layer,device,criterion,learning_rate)
+    ## model part 
+    device = torch.device(c_project["device"])
+    if c_train["criterion"] =='mse':
+        criterion = nn.MSELoss().to(device)
+    elif c_train["criterion"] =='mae':
+        criterion = nn.L1Loss().to(device)
+    else:
+        raise ValueError("no such criterion! ")
 
-    loss_list, total_batch_num = model.train(num_epochs,train_loader)
+    model = GraphWrap(middle_layer=c_model['middle_layer'],
+                      device=device,
+                      criterion=criterion,
+                      learning_rate=c_train['learning_rate'],
+                      use_wandb=c_project["use_wandb"],
+                      is_float=c_model['use_float'],
+                      step_size=c_train['step_size'],
+                      gamma=c_train['gamma'],
+                      smoothing_num=c_model['smoothing_num'],
+                      coarse_num=c_model['coarse_num'],
+                      max_iter=c_model['max_iter'],
+                      threshold=c_model['threshold']
+                      )
+
+    loss_list, total_batch_num = model.train(c_train['num_epochs'],train_loader)
     model.test(test_loader)
 
     # plot_loss(loss_list,total_batch_num,num_epochs,epoch_step,'graphnet')
@@ -86,15 +104,16 @@ def debug():
     random_seed = 1
     setup_seed(random_seed)
 
-    mat_idx = list(range(4))
+    mat_idx = list(range(8))
     dataset = GraphData(mat_idx)
-    trainloader = DataLoader(dataset,batch_size=2,shuffle=True,num_workers=1)
-
-    for graphs in trainloader:
-        print('len grath = ', len(graphs))
-        print(graphs.batch)
-        idx = graphs.mat_id
-        print(idx)
+    trainloader = DataLoader(dataset,batch_size=4,shuffle=True,num_workers=1)
+    model = GraphWrap(2,"cuda",nn.MSELoss().to("cuda"),0.01,use_wandb=False)
+    model.test(trainloader)
+    # for graphs in trainloader:
+    #     print('len grath = ', len(graphs))
+    #     print(graphs.batch)
+    #     idx = graphs.mat_id
+    #     print(idx)
 
 if __name__ == '__main__':
     main()

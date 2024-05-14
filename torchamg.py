@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import time 
 class TwoGrid:
     def __init__(self, pre_smoother, post_smoother, smoothing_num, coarse_solver, coarse_num, dtype=torch.float64, device='cpu'):
         self.pre_smoother = pre_smoother
@@ -47,6 +48,39 @@ class TwoGrid:
             x = self.post_smoother.Solve(b, x)
 
         return x
+    def Multi_Solve(self, b, x, max_iter=100, threshold=1e-4):
+        error = threshold+1
+        iters = 0
+        iter_time = 0
+        while (error>threshold) and (iters<max_iter):
+            t1 = time.perf_counter()
+            x = self.Solve(b, x)
+            t2 = time.perf_counter()
+            iter_time+= t2-t1
+            # mse error 
+            error = torch.mean((self.A@x -b)**2)
+            iters+=1
+        
+        return x, iters, error, iter_time
+    
+
+
+class MultiGrid:
+    def __init__(self, threshold, pre_smoother, post_smoother, smoothing_num, coarse_solver, coarse_num, dtype=torch.float64, device='cpu'):
+        self.pre_smoother = pre_smoother
+        self.post_smoother = post_smoother
+        self.coarse_solver = coarse_solver
+        self.smoothing_num = smoothing_num
+        self.coarse_num = coarse_num
+        self.dtype = dtype
+        self.device = device
+        self.threshold = threshold
+        self.twogrid = TwoGrid(pre_smoother, post_smoother, smoothing_num, coarse_solver, coarse_num, dtype=torch.float64, device='cpu')
+    def Setup(self, A, p):
+        self.twogrid.Setup(A, p)
+    def Solve(self, b, x, threshold=None):
+        # TODO V-cycle/W-cycle
+        pass
 
 
 def GetDiagVec(csr_A, dtype=torch.float64, device='cpu'):
