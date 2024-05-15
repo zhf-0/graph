@@ -124,7 +124,7 @@ class GraphNet(torch.nn.Module):
         g_out = 0
 
         n_hidden = 1
-        hidden_size = 16
+        hidden_size = 32
 
         layers = []
 
@@ -325,6 +325,13 @@ class GraphWrap:
         print('begin to test')
         
         self.model.eval()
+        iters_model_list = []
+        error_model_list = []
+        time_model_list = []
+        iters_base_list = []
+        error_base_list = []
+        time_base_list = []
+        mat_list = []
         for graphs in testloader:
             graphs = graphs.to(self.device)
             with torch.no_grad():
@@ -335,13 +342,7 @@ class GraphWrap:
                 edge_batch = batch[row_vec]
 
                 num_mat = len(graphs)
-                mat_list = []
-                iters_model_list = []
-                error_model_list = []
-                time_model_list = []
-                iters_base_list = []
-                error_base_list = []
-                time_base_list = []
+                
                 for k in range(num_mat):
                     x_model, iters_model, error_model, time_model = OptMatP(graphs.y,graphs.mat_id,out,batch,edge_batch,k,self.dtype,self.device,
                                                                             run_type="test",smoothing_num=self.smoothing_num,coarse_num=self.coarse_num,
@@ -359,24 +360,24 @@ class GraphWrap:
                     error_base_list.append(error_base.detach().cpu().numpy())
                     time_base_list.append(time_base)
                     mat_list.append(int(graphs.mat_id[k].detach().cpu().numpy()))
-                print('-'*87)
-                print('='*88)
-                print("TEST RESLUT: ")
-                print(f"Optimized P with: Mean MSE: {np.mean(error_model_list):.4e} | Mean Iterations: {np.mean(iters_model_list):3.2f} | Mean Time used: {np.mean(time_model_list):.4f}")
-                print(f"Original  P with: Mean MSE: {np.mean(error_base_list):.4e} | Mean Iterations: {np.mean(iters_base_list):3.2f} | Mean Time used: {np.mean(time_base_list):.4f}")
-                print('='*88)
-                if self.use_wandb:
-                    wandb.log({"test iters":wandb.plot.line_series(xs=list(range(num_mat)),
-                                                        ys=[iters_model_list, iters_base_list],
-                                                        keys=['model', 'origin'],
-                                                        title="Test iters",
-                                                        xname="Mat ids"),
-                                "test time":wandb.plot.line_series(xs=list(range(num_mat)),
-                                                        ys=[time_model_list, time_base_list],
-                                                        keys=['model', 'origin'],
-                                                        title="Test time",
-                                                        xname="Mat ids")
-                                                        })
+        print('-'*87)
+        print('='*88)
+        print("TEST RESLUT: ")
+        print(f"Optimized P with: Mean MSE: {np.mean(error_model_list):.4e} | Mean Iterations: {np.mean(iters_model_list):3.2f} | Mean Time used: {np.mean(time_model_list):.4f}")
+        print(f"Original  P with: Mean MSE: {np.mean(error_base_list):.4e} | Mean Iterations: {np.mean(iters_base_list):3.2f} | Mean Time used: {np.mean(time_base_list):.4f}")
+        print('='*88)
+        if self.use_wandb:
+            wandb.log({"test iters":wandb.plot.line_series(xs=list(range(len(mat_list))),
+                                                ys=[iters_model_list, iters_base_list],
+                                                keys=['model', 'origin'],
+                                                title="Test iters",
+                                                xname="Mat ids"),
+                        "test time":wandb.plot.line_series(xs=list(range(len(mat_list))),
+                                                ys=[time_model_list, time_base_list],
+                                                keys=['model', 'origin'],
+                                                title="Test time",
+                                                xname="Mat ids")
+                                                })
 
 
 
