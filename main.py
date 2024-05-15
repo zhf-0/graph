@@ -17,7 +17,6 @@ import yaml
 # def plot_loss(loss_list,num_batch,num_epoch,epoch_step,name):
 #     x = list(range(num_batch))
 #     fig, ax = plt.subplots(1,1)
-#     ax.set_title("Classification",fontsize = 20)
 #     ax.set_xlabel("epoch",fontsize = 20)
 #     ax.set_ylabel("loss",fontsize = 20)
 	
@@ -30,7 +29,7 @@ import yaml
 #     ax.plot(x,loss_list)
 
 #     plt.show()
-#     filename = name + "classify_loss.png"
+#     filename = name + "_loss.png"
 #     fig.savefig(filename, bbox_inches='tight')
 #     plt.close()
 
