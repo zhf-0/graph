@@ -2,18 +2,18 @@ project:
   project_name: 'Graph'
   exp_name: 'exp1'
   seed: 42
-  use_wandb: False
-  num_workers: 5
+  use_wandb: True
+  num_workers: 2
   device: 'cuda:0'
 data:
-  mat_nums: 120
+  mat_nums: 50
   train_ratio: 0.8
-  batch_size: 60
+  batch_size: 50
 model:
-  middle_layer: 2
+  middle_layer: 4
   use_float: False # float/double
   smoothing_num: 3
-  coarse_num: 10
+  coarse_num: 5
   max_iter: 100
   threshold: 0.0001
 
