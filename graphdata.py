@@ -95,7 +95,8 @@ class GraphData(torch.utils.data.Dataset):
 
 
                 # finaly cteate the graph
-                np_row, np_col = scipy_coo.nonzero()
+                np_row = scipy_coo.row
+                np_col = scipy_coo.col
                 torch_row = torch.from_numpy(np_row.astype(np.int64))
                 torch_col = torch.from_numpy(np_col.astype(np.int64))
                 edge_index = torch.stack((torch_row,torch_col),0)
