@@ -12,7 +12,7 @@ class TwoGrid:
         self.device = device
 
     def Setup(self, A, p):
-        R = p.t().to_sparse_csr()
+        R = p.t()#.to_sparse_csr()
         A_c = R @ A @ p 
 
         self.pre_smoother.Setup(A)
@@ -23,12 +23,12 @@ class TwoGrid:
         self.R = R.to(self.device)
         self.A_c = A_c.to(self.device)
         self.A = A.to(self.device)
-        self.dense_A_c = A_c.to_dense().to(self.device)
+        # self.dense_A_c = A_c.to_dense().to(self.device)
 
     def CoarseSolve(self, b, x):
-        # for _ in range(self.coarse_num):
-        #     x = self.coarse_solver.Solve(b, x)
-        x = torch.linalg.solve(self.dense_A_c, b)
+        for _ in range(self.coarse_num):
+            x = self.coarse_solver.Solve(b, x)
+        # x = torch.linalg.solve(self.dense_A_c, b)
         return x
 
     def Solve(self, b, x):
@@ -142,7 +142,7 @@ def GetTriMat(coo_A, dtype=torch.float64, device='cpu'):
 
 def GetInvLowerTriSpMat(coo_A, dtype=torch.float64, device='cpu'):
     diag = GetDiagVec(coo_A, dtype, device)
-    lowtri, uptri = GetTriMat(coo_A, dtype, device='cpu')
+    lowtri, uptri = GetTriMat(coo_A, dtype, device=device)
     coo = lowtri.coalesce()
     row_vec, col_vec = coo.indices()
     val_vec = coo.values()

@@ -24,7 +24,7 @@ class GraphData(torch.utils.data.Dataset):
         self.num = len(self.mat_idx)
             
         self.transform = transform
-        self.root_path_mat = './MatData'
+        self.root_path_mat = './suitesparse/succmat/SuccMatData'
         self.root_path_graph = './GraphData'
             
         os.makedirs(self.root_path_graph,exist_ok=True)
@@ -95,7 +95,9 @@ class GraphData(torch.utils.data.Dataset):
 
 
                 # finaly cteate the graph
-                np_row, np_col = scipy_coo.nonzero()
+                # np_row, np_col = scipy_coo#.nonzero()
+                np_row = scipy_coo.row
+                np_col = scipy_coo.col
                 torch_row = torch.from_numpy(np_row.astype(np.int64))
                 torch_col = torch.from_numpy(np_col.astype(np.int64))
                 edge_index = torch.stack((torch_row,torch_col),0)
@@ -116,6 +118,11 @@ class GraphData(torch.utils.data.Dataset):
                 tensor_dict['p_size'] = p_size
 
                 A_val = torch.from_numpy(scipy_coo.data)
+                print(A_val.shape)
+                print(edge_index.shape)
+                print(scipy_coo.shape)
+                print(idx)
+                # exit()
                 coo_A = torch.sparse_coo_tensor(edge_index, A_val, scipy_coo.shape)
                 tensor_dict['coo_A'] = coo_A
 
