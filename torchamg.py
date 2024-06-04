@@ -1,6 +1,37 @@
 import torch
-import numpy as np
-import time 
+from torch_sparse import SparseTensor
+import time
+
+def GetInvDiagSpMat(csr_A, dtype=torch.float64, device='cpu'):
+    diag = csr_A.get_diag()
+    invdiag = 1.0 / diag
+
+    nrow = csr_A.size(0)
+    row_vec = torch.arange(nrow,device=device)
+    col_vec = torch.arange(nrow,device=device)
+    sp = SparseTensor(row=row_vec, col=col_vec, value=invdiag, sparse_sizes=(nrow,nrow))
+    sp = sp.to(device)
+
+    return sp
+
+class wJacobi:
+    def __init__(self, weight=1.0, dtype=torch.float64, device='cpu'):
+        self.weight = weight
+        self.dtype = dtype
+        self.device = device
+
+    def Setup(self, A):
+        invdiag = GetInvDiagSpMat(A,self.dtype,self.device)
+
+        # self.mat = I - self.weight * (invdiag @ A)
+        self.mat = invdiag.matmul(A)
+        self.A = A.to(self.device)
+        self.invdiag = invdiag
+
+    def Solve(self, b, x):
+        res = x - self.weight * self.mat.matmul(x) + self.weight * self.invdiag.matmul(b)
+        return res
+
 class TwoGrid:
     def __init__(self, pre_smoother, post_smoother, smoothing_num, coarse_solver, coarse_num, dtype=torch.float64, device='cpu'):
         self.pre_smoother = pre_smoother
@@ -12,8 +43,8 @@ class TwoGrid:
         self.device = device
 
     def Setup(self, A, p):
-        R = p.t().to_sparse_csr()
-        A_c = R @ A @ p 
+        R = p.t()
+        A_c = R.matmul(A).matmul(p) 
 
         self.pre_smoother.Setup(A)
         self.post_smoother.Setup(A)
@@ -38,16 +69,16 @@ class TwoGrid:
         for _ in range(self.smoothing_num):
             x = self.pre_smoother.Solve(b, x)
 
-        residual = b - self.A @ x
+        residual = b - self.A.matmul(x)
 
-        coarse_b = self.R @ residual
+        coarse_b = self.R.matmul(residual)
         coarse_x = self.CoarseSolve(coarse_b, torch.zeros(coarse_b.shape,dtype=self.dtype,device=self.device) )
-        x += self.P @ coarse_x
+        xx = x + self.P.matmul(coarse_x)
 
         for _ in range(self.smoothing_num):
-            x = self.post_smoother.Solve(b, x)
+            xx = self.post_smoother.Solve(b, xx)
 
-        return x
+        return xx
     def Multi_Solve(self, b, x, max_iter=100, threshold=1e-4):
         error = threshold+1
         iters = 0
@@ -63,7 +94,6 @@ class TwoGrid:
         
         return x, iters, error, iter_time
     
-
 
 class MultiGrid:
     def __init__(self, threshold, pre_smoother, post_smoother, smoothing_num, coarse_solver, coarse_num, dtype=torch.float64, device='cpu'):
@@ -83,30 +113,6 @@ class MultiGrid:
         pass
 
 
-def GetDiagVec(csr_A, dtype=torch.float64, device='cpu'):
-    coo = csr_A.to_sparse_coo().coalesce()
-    row_vec, col_vec = coo.indices()
-    val_vec = coo.values()
-    nrow = coo.shape[0]
-    
-    diag = torch.zeros(nrow,dtype=dtype,device=device)
-    mask = row_vec == col_vec
-    diag[row_vec[mask]] = val_vec[mask]
-
-    return diag
-
-
-def GetInvDiagSpMat(csr_A, dtype=torch.float64, device='cpu'):
-    diag = GetDiagVec(csr_A, dtype, device)
-    invdiag = 1.0 / diag
-
-    nrow = csr_A.shape[0]
-    row_vec = torch.arange(nrow,device=device)
-    col_vec = torch.arange(nrow,device=device)
-    coo_invdiag = torch.sparse_coo_tensor(torch.stack((row_vec,col_vec)),invdiag, (nrow, nrow),dtype=dtype,device=device)
-    csr_invdiag = coo_invdiag.to_sparse_csr()
-
-    return csr_invdiag
 
 
 def CreateI(nrow, dtype=torch.float64, device='cpu'):
@@ -204,24 +210,6 @@ class Gauss_Seidel:
 
     def Solve(self, b, x):
         x = self.mat @ x + self.invlowtri @ b
-        return x
-
-class wJacobi:
-    def __init__(self, weight=1.0, dtype=torch.float64, device='cpu'):
-        self.weight = weight
-        self.dtype = dtype
-        self.device = device
-
-    def Setup(self, A):
-        invdiag = GetInvDiagSpMat(A,self.dtype,self.device)
-
-        # self.mat = I - self.weight * (invdiag @ A)
-        self.mat = self.weight * (invdiag @ A)
-        self.A = A.to(self.device)
-        self.invdiag = invdiag
-
-    def Solve(self, b, x):
-        x = x - self.mat @ x + self.weight * self.invdiag @ b
         return x
 
 
