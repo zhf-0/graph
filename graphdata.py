@@ -8,6 +8,8 @@ import pyamg
 import torch
 import torch_geometric.data as pygdat
 
+from torch_sparse import SparseTensor
+
 class TransGraph():
     def __init__(self):
         pass
@@ -123,6 +125,7 @@ class GraphData(torch.utils.data.Dataset):
                 print(idx)
                 # exit()
                 coo_A = torch.sparse_coo_tensor(edge_index, A_val, scipy_coo.shape)
+                coo_A = SparseTensor.from_torch_sparse_coo_tensor(coo_A)
                 tensor_dict['coo_A'] = coo_A
 
                 coarse_idx = torch.from_numpy(coarse_idx.astype(np.int64))

@@ -105,11 +105,11 @@ def debug():
     random_seed = 1
     setup_seed(random_seed)
 
-    mat_idx = list(range(8))
+    mat_idx = list(range(4))
     dataset = GraphData(mat_idx)
-    trainloader = DataLoader(dataset,batch_size=4,shuffle=True,num_workers=1)
+    trainloader = DataLoader(dataset,batch_size=1,shuffle=True,num_workers=1)
     model = GraphWrap(2,"cuda",nn.MSELoss().to("cuda"),0.01,use_wandb=False)
-    model.test(trainloader)
+    model.train(1,trainloader)
     # for graphs in trainloader:
     #     print('len grath = ', len(graphs))
     #     print(graphs.batch)
@@ -117,5 +117,5 @@ def debug():
     #     print(idx)
 
 if __name__ == '__main__':
-    main()
-    # debug()
+    # main()
+    debug()

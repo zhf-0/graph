@@ -8,6 +8,8 @@ import torch.nn.functional as F
 import torchamg
 import wandb
 import numpy as np
+from torch_sparse import SparseTensor
+
 def CreateMLP(
     in_size,
     out_size,
@@ -184,12 +186,9 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device,
 
     # construct P and normalize each row of the matrix P
     p_size = tensor_dict['p_size'].to(device)
-    coo_p = torch.sparse_coo_tensor(p_index, p_edge.squeeze(1), (p_size[0],p_size[1]))
-    csr_p = coo_p.to_sparse_csr()
+    sp_p = SparseTensor(row=p_index[0,:],col=p_index[1,:],value=p_edge.squeeze(1),sparse_sizes=(p_size[0],p_size[1]))
 
-    p_row_vec = csr_p.crow_indices()
-    p_col_vec = csr_p.col_indices()
-    p_val_vec = csr_p.values()
+    p_row_vec, p_col_vec, p_val_vec = sp_p.csr()
 
     new_p_val = torch.zeros(p_edge.shape[0],dtype=dtype,device=device)
     for i in range(p_size[0]):
@@ -197,21 +196,20 @@ def OptMatP(b, mat_id, edge_attr, batch, edge_batch, k, dtype, device,
         end_idx = p_row_vec[i+1]
         new_p_val[begin_idx:end_idx] = F.softmax(p_val_vec[begin_idx:end_idx],dim=0)
 
-    csr_p = torch.sparse_csr_tensor(p_row_vec, p_col_vec, new_p_val, size=(p_size[0],p_size[1]) )
-    csr_A = coo_A.to_sparse_csr()
+    sp_p.set_value(new_p_val,'csr')
 
     pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,smoothing_num,coarse_jacobi,coarse_num,dtype,device)
-    tg.Setup(csr_A,csr_p)
+    tg.Setup(coo_A,sp_p)
 
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
     if run_type == "train":
         x = tg.Solve(single_b, x)
-        Ax = csr_A @ x
+        Ax = coo_A.matmul(x)
         return single_b, Ax
     elif run_type == "test":
         x, iters, error, time_used = tg.Multi_Solve(single_b, x, max_iter=max_iter, threshold=threshold)
@@ -232,23 +230,21 @@ def OriginalP(b, mat_id, batch, k, dtype, device,
 
     # construct P
     p_size = tensor_dict['p_size'].to(device)
-    p = torch.sparse_coo_tensor(p_index, p_val, (p_size[0],p_size[1]) )
+    sp_p = SparseTensor(row=p_index[0,:],col=p_index[1,:],value=p_val,sparse_sizes=(p_size[0],p_size[1]))
 
-    csr_p = p.to_sparse_csr() 
-    csr_A = coo_A.to_sparse_csr()
 
     pre_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     post_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     coarse_jacobi = torchamg.wJacobi(dtype=dtype,device=device)
     tg = torchamg.TwoGrid(pre_jacobi,post_jacobi,smoothing_num,coarse_jacobi,coarse_num,dtype,device)
-    tg.Setup(csr_A,csr_p)
+    tg.Setup(coo_A,sp_p)
 
     node_mask = batch == k
     single_b = b[node_mask]
     x = torch.zeros(single_b.shape,dtype=dtype,device=device)
     if run_type == "train":
         x = tg.Solve(single_b, x)
-        Ax = csr_A @ x
+        Ax = coo_A.matmul(x)
         return single_b, Ax
     elif run_type == "test":
         x, iters, error, time_used = tg.Multi_Solve(single_b, x, max_iter=max_iter, threshold=threshold)
