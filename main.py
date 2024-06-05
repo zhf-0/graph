@@ -11,7 +11,7 @@ import torch_geometric.data as pygdat
 from torch_geometric.loader import DataLoader
 
 from graphdata import GraphData
-from graphnet import GraphWrap
+from graphnet import GraphWrap,GraphWrap2
 import wandb
 import yaml
 # def plot_loss(loss_list,num_batch,num_epoch,epoch_step,name):
@@ -100,20 +100,46 @@ def main(configFile="./config.yaml"):
     # plot_loss(loss_list,total_batch_num,num_epochs,epoch_step,'graphnet')
 
 def debug():
+    torch.autograd.set_detect_anomaly(True) 
     random_seed = 1
     setup_seed(random_seed)
 
-    mat_idx = list(range(4))
+    mat_idx = list(range(1))
     dataset = GraphData(mat_idx)
     trainloader = DataLoader(dataset,batch_size=1,shuffle=True,num_workers=1)
     model = GraphWrap(2,"cuda",nn.MSELoss().to("cuda"),0.01,use_wandb=False)
-    model.train(1,trainloader)
+    model.train(20,trainloader)
     # for graphs in trainloader:
     #     print('len grath = ', len(graphs))
     #     print(graphs.batch)
     #     idx = graphs.mat_id
     #     print(idx)
-
+def train2():
+    USE_WANDB = True
+    if USE_WANDB:
+        wandb.init(project='graph',
+                entity=None,
+                name='supervised learning')
+    mat_idx = list(range(1,200))
+    random.shuffle(mat_idx)
+    mark = int(len(mat_idx)*0.9)
+    train_idx = mat_idx[0:mark]
+    print("trian num: ", len(train_idx))
+    test_idx = mat_idx[mark:]
+    print("test num: ", len(test_idx))
+    dataset = GraphData(mat_idx)
+    batch_size = 5
+    train_set = torch.utils.data.Subset(dataset,train_idx)
+    test_set = torch.utils.data.Subset(dataset,test_idx)
+    train_loader = DataLoader(train_set,batch_size=batch_size,shuffle=True,num_workers=2)
+    test_loader = DataLoader(test_set,batch_size=batch_size,shuffle=False)
+    model = GraphWrap2(2,"cuda",nn.MSELoss().to("cuda"),
+                       0.01,use_wandb=USE_WANDB,step_size=10,gamma=0.2,
+                       smoothing_num=3,coarse_num=5,
+                       p_opt_path='/work/get_optimal_P/result')
+    model.train(100,train_loader)
+    model.test(test_loader)
 if __name__ == '__main__':
     # main()
-    debug()
+    train2()
+    # debug()
