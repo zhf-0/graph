@@ -89,7 +89,7 @@ class TwoGrid:
             t2 = time.perf_counter()
             iter_time+= t2-t1
             # mse error 
-            error = torch.mean((self.A@x -b)**2)
+            error = torch.sqrt(torch.mean((self.A@x -b)**2))/torch.norm(b)
             iters+=1
         
         return x, iters, error, iter_time
