@@ -52,13 +52,13 @@ def FilterP(p):
     '''
     return p
 
-def MultiLevel(A,num_level,b,x,maxiter,rtol,min_coarse_num=100):
+def MultiLevel(A,num_level,b,x,maxiter,rtol,fn_filter,min_coarse_num=100):
     assert num_level >= 2
 
     C = classical_strength_of_connection(A) 
     splitting = RS(A)
     P = direct_interpolation(A, C, splitting)
-    P = FilterP(P)
+    P = fn_filter(P)
     R = P.T.tocsr()
 
     levels = []
@@ -74,7 +74,7 @@ def MultiLevel(A,num_level,b,x,maxiter,rtol,min_coarse_num=100):
             C = classical_strength_of_connection(levels[i].A)
             splitting = RS(levels[i].A)
             P = direct_interpolation(levels[i].A, C, splitting)
-            P = FilterP(P)
+            P = fn_filter(P)
             R = P.T.tocsr()
             levels[i].P = P
             levels[i].R = R
@@ -112,8 +112,9 @@ def TestMulti():
     maxiter = 100
     rtol = 1e-3
     num_level = 7
+    fn_filter = FilterP
 
-    x,info = MultiLevel(A,num_level,b,x,rtol,maxiter)
+    x,info = MultiLevel(A,num_level,b,x,maxiter,rtol,fn_filter)
     if info == 0:
         print('success')
     else:
