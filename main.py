@@ -100,7 +100,8 @@ def main(configFile="./config.yaml"):
     # plot_loss(loss_list,total_batch_num,num_epochs,epoch_step,'graphnet')
 
 def debug():
-    random_seed = 1
+    # torch.autograd.set_detect_anomaly(True)
+    random_seed = 2
     setup_seed(random_seed)
 
     mat_idx = list(range(4))
