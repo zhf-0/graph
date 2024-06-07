@@ -26,16 +26,15 @@ class GraphData(torch.utils.data.Dataset):
         self.num = len(self.mat_idx)
             
         self.transform = transform
-        self.root_path_mat = './MatData'
+        self.root_path_mat = '/work/graph/matvec8000'
         self.root_path_graph = './GraphData'
-            
         os.makedirs(self.root_path_graph,exist_ok=True)
 
         self.Process()
 
     def Process(self):
         print(f'begin to process {self.num} matrices')
-        mat_template = self.root_path_mat+'/scipy_csr{}.npz'
+        mat_template = self.root_path_mat+'/csr{}.npz'
         vec_template = self.root_path_mat+'/b{}.npy'
         graph_template = self.root_path_graph+'/graph{}.dat'
         extra_template = self.root_path_graph+'/extra{}.dat'
