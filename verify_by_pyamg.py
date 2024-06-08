@@ -76,9 +76,6 @@ def spmat_set_1toRowMax_0Else(mat):
     out_mat = scipy.sparse.csr_matrix((new_data, new_indices, new_indptr), shape=mat.shape)
     return out_mat
 
-
-
-    
 def FilterP(p):
     '''
     change each row of matrix p
@@ -108,8 +105,12 @@ def MultiLevel(A,num_level,b,x,maxiter,rtol,fn_filter,min_coarse_num=100):
             C = classical_strength_of_connection(levels[i].A)
             splitting = RS(levels[i].A)
             P = classical_interpolation(levels[i].A, C, splitting)
-            # P = fn_filter(P)
+            P = fn_filter(P)
             R = P.T.tocsr()
+            # autotune
+            # if (R@levels[i].A@P).nnz/P.shape[1] >levels[i].A.nnz/A.shape[1]:
+            #     P = fn_filter(P)
+            #     R = P.T.tocsr()
             levels[i].P = P
             levels[i].R = R
         else:
@@ -235,21 +236,21 @@ def run_multi_mg():
     opt_iter_list = []
     ori_time_list = []
     opt_time_list = []
-    num = 100
+    num = 2
     fn_filter = FilterP
     fn_filter2 = spmat_set_1toRowMax_0Else
     rtol = 1e-3
     num_level = 7
     maxiter = 200
     for i in range(num):
-        A = scipy.sparse.load_npz(f'/work/graph/openfoam/matvec8000/csr{i+1}.npz')
+        A = scipy.sparse.load_npz(f'/work/graph/openfoam/motor/csr{i+1}.npz')
         
         # P_opt = scipy.sparse.load_npz(f"/work/get_optimal_P/result/p_opt{i+1}.npz")
         P = GenerateP(A)
         P_opt = spmat_set_1toRowMax_0Else(P)
         # np.random.seed(1)
         x = np.zeros(A.shape[0])
-        b =  np.load(f"/work/graph/openfoam/matvec8000/b{i+1}.npy")
+        b =  np.load(f"/work/graph/openfoam/motor/b{i+1}.npy")
         # b = np.ones(A.shape[0])
         b_norm = np.linalg.norm(b)
         t1 = time.time()
