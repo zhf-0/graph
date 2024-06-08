@@ -1,27 +1,27 @@
 project:
   project_name: 'Graph'
-  exp_name: 'exp1'
+  exp_name: 'exp2'
   seed: 42
-  use_wandb: True
-  num_workers: 2
-  device: 'cuda:0'
+  use_wandb: False
+  num_workers: 1
+  device: 'cuda:1'
 data:
-  mat_nums: 50
+  mat_nums: 100
   train_ratio: 0.8
-  batch_size: 50
+  batch_size: 1
 model:
-  middle_layer: 4
+  middle_layer: 2
   use_float: False # float/double
-  smoothing_num: 3
+  smoothing_num: 10
   coarse_num: 5
-  max_iter: 100
+  max_iter: 50
   threshold: 0.0001
 
 train:
-  num_epochs: 10
+  num_epochs: 20
   learning_rate: 0.01
   criterion: 'mse'
   scheduler: 'step'
-  step_size: 2 # for step scheduler
+  step_size: 5 # for step scheduler
   gamma: 0.8 # for step scheduler
 
