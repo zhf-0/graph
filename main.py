@@ -57,7 +57,9 @@ def main(configFile="./config.yaml"):
     setup_seed(c_project["seed"])
 
     ## data part
-    mat_idx = list(range(c_data['mat_nums']))
+    mat_idx = list(range(1,c_data['mat_nums']+1))
+    # mat_idx = np.load('./suitesparse/succmat/succ.npy')
+    # mat_idx = np.setdiff1d(mat_idx, [816,1673,305,417,2268,425,395,429,2267,435,1639,1640,2265,2547])
     random.shuffle(mat_idx)
     mark = int(len(mat_idx)*c_data['train_ratio'])
     train_idx = mat_idx[0:mark]
@@ -140,6 +142,5 @@ def train2():
     model.train(100,train_loader)
     model.test(test_loader)
 if __name__ == '__main__':
-    # main()
-    train2()
+    main()
     # debug()

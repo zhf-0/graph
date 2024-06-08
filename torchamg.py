@@ -148,7 +148,7 @@ def GetTriMat(coo_A, dtype=torch.float64, device='cpu'):
 
 def GetInvLowerTriSpMat(coo_A, dtype=torch.float64, device='cpu'):
     diag = GetDiagVec(coo_A, dtype, device)
-    lowtri, uptri = GetTriMat(coo_A, dtype, device='cpu')
+    lowtri, uptri = GetTriMat(coo_A, dtype, device=device)
     coo = lowtri.coalesce()
     row_vec, col_vec = coo.indices()
     val_vec = coo.values()
