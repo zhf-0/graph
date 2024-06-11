@@ -95,21 +95,65 @@ class TwoGrid:
         return x, iters, error, iter_time
     
 
-class MultiGrid:
-    def __init__(self, threshold, pre_smoother, post_smoother, smoothing_num, coarse_solver, coarse_num, dtype=torch.float64, device='cpu'):
-        self.pre_smoother = pre_smoother
-        self.post_smoother = post_smoother
-        self.coarse_solver = coarse_solver
-        self.smoothing_num = smoothing_num
-        self.coarse_num = coarse_num
+class Level:
+    def __init__(self,R=None,A=None,P=None,dtype=torch.float64,device='cpu'):
+        self.R = R.to(device)
+        self.A = A.to(device)
+        self.P = P.to(device)
         self.dtype = dtype
         self.device = device
-        self.threshold = threshold
-        self.twogrid = TwoGrid(pre_smoother, post_smoother, smoothing_num, coarse_solver, coarse_num, dtype=torch.float64, device='cpu')
-    def Setup(self, A, p):
-        self.twogrid.Setup(A, p)
-    def Solve(self, b, x, threshold=None):
-        # TODO V-cycle/W-cycle
+
+        self.pre_smoother = None
+        self.pre_num_iter = 0
+        
+        self.post_smoother = None
+        self.post_num_iter = 0
+
+    def SetPreSmt(self,pre_smoother,num_iter):
+        self.pre_smoother = pre_smoother
+        self.pre_smoother.Setup(self.A)
+        self.pre_num_iter = num_iter
+
+    def SetPostSmt(self,post_smoother,num_iter):
+        self.post_smoother = post_smoother
+        self.post_smoother.Setup(self.A)
+        self.post_num_iter = num_iter
+
+class MultiGrid:
+    def __init__(self, levels, coarse_solver, coarse_iter_num, dtype=torch.float64, device='cpu'):
+        self.levels = levels
+        self.coarse_solver = coarse_solver
+        self.coarse_iter_num = coarse_iter_num
+        self.dtype = dtype
+        self.device = device
+
+    def CoarseSolve(self, b, x):
+        for _ in range(self.coarse_num):
+            x = self.coarse_solver.Solve(b, x)
+        # x = torch.linalg.solve(self.dense_A_c, b)
+        return x
+
+    def Iterate(self,b,x,lvl_idx=0):
+        if lvl_idx == len(self.levels)-1:
+            x = self.CoarseSolve(b,x)
+            return x
+
+        for _ in range(self.levels[lvl_idx].pre_num_iter):
+            x = self.levels[lvl_idx].pre_smoother.Solve(b, x)
+
+        residual = b - self.levels[lvl_idx].A.matmul(x)
+        coarse_b = self.levels[lvl_idx].R.matmul(residual)
+        coarse_x = torch.zeros(coarse_b.shape,dtype=self.dtype,device=self.device)
+
+        coarse_x = self.Iterate(coarse_b,coarse_x,lvl_idx+1)
+        x = x + self.levels[lvl_idx].P.matmul(coarse_x)
+
+        for _ in range(self.levels[lvl_idx].post_num_iter):
+            x = self.levels[lvl_idx].post_smoother.Solve(b, x)
+
+        return x
+
+    def Solve(self, b, x, max_iter=100, rtol=1e-3):
         pass
 
 
