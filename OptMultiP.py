@@ -10,7 +10,8 @@ class TrainP(torch.nn.Module):
         super().__init__()
         self.A = A
         self.list_p = list_p
-        self.para_p_val_list = []
+        self.device = A.device()
+        self.para_p_val_list = torch.nn.ParameterList()
 
         self.num_level = len(list_p)
         assert self.num_level >= 2
@@ -28,11 +29,14 @@ class TrainP(torch.nn.Module):
 
         P = SparseTensor(rowptr=self.list_p[0][0], col=self.list_p[0][1], value=self.para_p_val_list[0], sparse_sizes=(self.list_p[0][3],self.list_p[0][4]))
         R = P.t()
+
         level = torchamg.Level(R,self.A,P,device=self.device)
+
         pre_jacobi = torchamg.wJacobi(weight=2/3,dtype=dtype,device=self.device)
         post_jacobi = torchamg.wJacobi(weight=2/3,dtype=dtype,device=self.device)
         level.SetPreSmt(pre_jacobi,smoothing_num)
         level.SetPostSmt(post_jacobi,smoothing_num)
+
         self.levels.append(level)
 
         # set coarse solver
@@ -67,14 +71,13 @@ def GetData(mat_path,dtype=torch.float64,device='cpu'):
     csr_A = scipy.sparse.load_npz(mat_path)
     ml = pyamg.ruge_stuben_solver(csr_A, keep=True)
     num_level = len(ml.levels)
-    p = ml.levels[0].P
 
     sp_A = SparseTensor.from_scipy(csr_A)
     sp_A = sp_A.to(device)
 
     # change p into torch sparse matrix
     list_p = []
-    for i in range(1,num_level-1):
+    for i in range(num_level-1):
         p = ml.levels[i].P
         p_row_vec = p.indptr
         p_col_vec = p.indices
@@ -92,15 +95,16 @@ def GetData(mat_path,dtype=torch.float64,device='cpu'):
     return sp_A, list_p
 
 def Train():
+    torch.autograd.set_detect_anomaly(True)
     dtype = torch.float64
-    # device = 'cuda:0'
-    device = 'cpu'
-    mat_path = 'poisson_tri10.npz'
+    device = 'cuda:0'
+    # device = 'cpu'
+    mat_path = './MatData/scipy_csr1.npz'
     num_iter = 10
 
     A,list_p = GetData(mat_path,dtype,device)
 
-    model = TrainP(A,list_p,num_iter)
+    model = TrainP(A,list_p,num_iter).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 

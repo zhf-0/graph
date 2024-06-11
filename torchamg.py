@@ -97,9 +97,9 @@ class TwoGrid:
 
 class Level:
     def __init__(self,R=None,A=None,P=None,dtype=torch.float64,device='cpu'):
-        self.R = R.to(device)
-        self.A = A.to(device)
-        self.P = P.to(device)
+        self.R = R
+        self.A = A
+        self.P = P
         self.dtype = dtype
         self.device = device
 
@@ -128,7 +128,7 @@ class MultiGrid:
         self.device = device
 
     def CoarseSolve(self, b, x):
-        for _ in range(self.coarse_num):
+        for _ in range(self.coarse_iter_num):
             x = self.coarse_solver.Solve(b, x)
         # x = torch.linalg.solve(self.dense_A_c, b)
         return x
