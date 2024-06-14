@@ -13,7 +13,7 @@ class TrainP(torch.nn.Module):
         self.device = A.device()
         self.para_p_val_list = torch.nn.ParameterList()
 
-        self.num_level = len(list_p)
+        self.num_level = len(list_p)+1
         assert self.num_level >= 2
 
         for i in range(self.num_level-1):
@@ -21,7 +21,7 @@ class TrainP(torch.nn.Module):
             self.para_p_val_list.append(tmp)
 
         self.num = num
-        self.levels = []
+        self.levels = [None] * self.num_level
 
     def forward(self,b,x):
         dtype = torch.float64
@@ -37,7 +37,7 @@ class TrainP(torch.nn.Module):
         level.SetPreSmt(pre_jacobi,smoothing_num)
         level.SetPostSmt(post_jacobi,smoothing_num)
 
-        self.levels.append(level)
+        self.levels[0] = level
 
         # set coarse solver
         coarse_num = 10
@@ -57,7 +57,7 @@ class TrainP(torch.nn.Module):
                 level.SetPreSmt(pre_jacobi,smoothing_num)
                 level.SetPostSmt(post_jacobi,smoothing_num)
 
-            self.levels.append(level)
+            self.levels[i] = level
 
 
         mg = torchamg.MultiGrid(self.levels,coarse_jacobi,coarse_num,device=self.device)
@@ -113,13 +113,15 @@ def Train():
     x = torch.zeros(nrow,1,dtype=dtype,device=device)
     b = torch.ones(nrow,1,dtype=dtype,device=device)
 
-    optimizer.zero_grad()
-    x = model(b,x)
-    Ax = A.matmul(x)
-    loss = torch.mean((Ax-b)**2)
-    loss.backward() 
-    optimizer.step()
-    print(f"loss = {loss.item()}")
+    for _ in range(3):
+        x = model(b,x)
+        Ax = A.matmul(x)
+        loss = torch.mean((Ax-b)**2)
+        optimizer.zero_grad()
+        loss.backward() 
+        optimizer.step()
+        x = x.detach()
+        print(f"loss = {loss.item()}")
     
 if __name__ == '__main__':
     Train()

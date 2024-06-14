@@ -72,13 +72,15 @@ def Train():
     x = torch.zeros(nrow,1,dtype=dtype,device=device)
     b = torch.ones(nrow,1,dtype=dtype,device=device)
 
-    optimizer.zero_grad()
-    x = model(b,x)
-    Ax = A.matmul(x)
-    loss = torch.mean((Ax-b)**2)
-    loss.backward() 
-    optimizer.step()
-    print(f"loss = {loss.item()}")
+    for _ in range(3):
+        x = model(b,x)
+        Ax = A.matmul(x)
+        loss = torch.mean((Ax-b)**2)
+        optimizer.zero_grad()
+        loss.backward() 
+        optimizer.step()
+        x = x.detach()
+        print(f"loss = {loss.item()}")
     
 if __name__ == '__main__':
     Train()
